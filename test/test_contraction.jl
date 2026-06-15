@@ -131,9 +131,9 @@ end
         C1 = contract(A, D)
         C2 = contract(D, A)
 
-        # same data, possibly different index order
-        @test Set(inds(C1)) == Set(inds(C2))
-        @test C1.storage ≈ C2.storage
+        @test inds(C1) == (j, k)
+        @test inds(C2) == (k, j)
+        @test C1.storage ≈ transpose(C2.storage)
     end
 
     @testset "full contraction to diagonal" begin
@@ -151,3 +151,27 @@ end
         @test C.storage[] ≈ sum(d[k] * A.storage[k,k] for k in 1:3)
     end
 end
+    @testset "DiagTensor × DiagTensor: element-wise product" begin
+        i = Index(3, :Link)
+        j = Index(3, :Link)
+
+        d1 = [1.0, 2.0, 3.0]
+        d2 = [2.0, 3.0, 4.0]
+        D1 = DiagTensor((i, j), d1)
+        D2 = DiagTensor((j, i), d2)
+
+        C = contract(D1, D2)
+
+        # fully contracted, returns scalar DenseTensor
+        @test ndims(C) == 0
+        @test C.storage[] ≈ sum(d1 .* d2)
+        
+        k = Index(3, :Link)
+        D3 = DiagTensor((j, k), d2)
+        C2 = contract(D1, D3)
+        
+        # partially contracted, returns DiagTensor
+        @test C2 isa DiagTensor
+        @test inds(C2) == (i, k)
+        @test C2.storage ≈ d1 .* d2
+    end
