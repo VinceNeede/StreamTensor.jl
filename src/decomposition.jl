@@ -27,10 +27,12 @@ function _mat_svd(A_mat::AbstractMatrix)
 end
 
 function _new_bonds(χ::Int, left_inds::NTuple{NL,Index}, right_inds::NTuple{NR,Index}) where {NL,NR}
+    bond_u = Index(χ, :Link)
+    bond_v = Index(χ, :Link)
     u_inds = ntuple(i -> i <= NL ? left_inds[i] : bond_u, NL + 1)
     v_inds = ntuple(i -> i == 1 ? bond_v : right_inds[i - 1], NR + 1)
 
-    return Index(χ, :Link), Index(χ, :Link), u_inds, v_inds
+    return bond_u, bond_v, u_inds, v_inds
 end
 
 function _new_bonds(χ::Int)
@@ -52,15 +54,18 @@ function LinearAlgebra.svd(A::DenseTensor{T,NA}, left_inds::NTuple{NL, Index};
     inds_a = inds(A)
     NR = NA - NL
 
-    right_inds_mut = MVector{NA-NL, Index}(undef)
-    ir = 0
-    for idx in inds_a
-        if idx ∉ left_inds
-            ir += 1 
-            right_inds_mut[ir] = idx
+    right_inds = ntuple(Val(NR)) do i
+        count = 0
+        for idx in inds_a
+            if idx ∉ left_inds
+                count += 1
+                if count == i
+                    return idx
+                end
+            end
         end
+        error("Index missing: left_inds is not a strict subset of A's indices.")
     end
-    right_inds = Tuple(right_inds_mut)
 
     perm_mut = zero(MVector{NA, Int})
     @inbounds begin
@@ -81,7 +86,7 @@ function LinearAlgebra.svd(A::DenseTensor{T,NA}, left_inds::NTuple{NL, Index};
     U_mat, s, Vt_mat = _mat_svd(A_mat)
     U_mat, s, Vt_mat, truncerr = _truncate(s, U_mat, Vt_mat; maxdim, cutoff)
     χ = length(s)
-    bond_u, bond_v, u_inds, v_inds = _new_bonds(χ)
+    bond_u, bond_v, u_inds, v_inds = _new_bonds(χ, left_inds, right_inds)
 
     U = DenseTensor(u_inds, reshape(U_mat, dims(left_inds)..., χ))
     S = DiagTensor((bond_u, bond_v), s)
