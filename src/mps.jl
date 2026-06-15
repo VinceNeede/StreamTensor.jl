@@ -1,0 +1,226 @@
+
+mutable struct MPS{T, A <: AbstractArray{T,3}} <: AbstractTensorTrain{T}
+    tensors :: Vector{MPSTensor{T,A}}
+    llim    :: Int
+    rlim    :: Int
+
+    function MPS(tensors::Vector{<:MPSTensor{T, A}}, llim::Int, rlim::Int) where {T, A <: AbstractArray{T,3}}
+        _validate_tensor_train(tensors, llim, rlim)
+        new{T, A}(tensors, llim, rlim)
+    end
+end
+
+# Constructors
+MPS(tensors::Vector{<:MPSTensor{T}}) where {T} = 
+    MPS(tensors, 0, length(tensors) + 1)
+
+MPS(tensors::Vector{<:MPSTensor{T}}, center::Int) where {T} = 
+    MPS(tensors, center - 1, center + 1)
+
+function MPS(
+    ::Type{T},
+    sites::Vector{<:Index},
+    labels::Vector{<:Tuple{AbstractString, NamedTuple}}
+) where {T}
+    L = length(sites)
+    @assert length(labels) == L "Number of labels doesn't match number of sites"
+    tensors = Vector{MPSTensor{T, Array{T,3}}}(undef, L)
+
+    left = Index(1, :Link)
+    for (i, (site, label)) in enumerate(zip(sites, labels))
+        tensors[i] = state(T, site, label; left_link=left)
+        left = tensors[i].right
+    end
+    return MPS(tensors, 0, L+1)
+end
+
+function MPS(
+    ::Type{T},
+    sites::Vector{<:Index},
+    labels::Vector{<:AbstractString}
+) where {T}
+    labels_tuple = [(label, (;)) for label in labels]
+    return MPS(T, sites, labels_tuple)
+end
+
+function MPS(
+    sites::Vector{<:Index},
+    labels::Vector{<:AbstractString}
+)
+    MPS(Float64, sites, labels)
+end
+
+function MPS(
+    sites::Vector{<:Index},
+    labels::Vector{<:Tuple{AbstractString, NamedTuple}}
+)
+    return MPS(Float64, sites, labels)   
+end
+
+Base.copy(ψ::MPS) = MPS(copy(ψ.tensors), ψ.llim, ψ.rlim)
+Base.deepcopy(ψ::MPS) = MPS(deepcopy(ψ.tensors), ψ.llim, ψ.rlim)
+
+siteinds(ψ::MPS) = [t.site for t in ψ.tensors]
+
+function random_mps(::Type{T}, sites::Vector{<:Index}, linkdim::Int) where {T}
+    L = length(sites)
+    tensors = Vector{MPSTensor{T, Array{T, 3}}}(undef, L)
+    mid = L ÷ 2
+
+    # left half: left-orthogonal tensors 1..mid
+    left = Index(1, :Link)
+    for i in 1:mid
+        d  = sites[i].dim
+        χl = left.dim
+        χr = min(linkdim, χl * d)
+        right = Index(χr, :Link)
+
+        Q, _ = qr(MPSTensor(randn(T, χl, d, χr), left, sites[i], right))
+
+        tensors[i] = Q
+        left = Q.right
+    end
+
+    # right half: right-orthogonal tensors L..mid+2
+    right = Index(1, :Link)
+    for i in L:-1:mid+2
+        d  = sites[i].dim
+        χr = right.dim
+        χl = min(linkdim, χr * d)
+        left_i = Index(χl, :Link)
+
+        _, Q = qr(MPSTensor(randn(T, χl, d, χr), left_i, sites[i], right); direction=RightOrthogonal)
+        tensors[i] = Q
+        right = Q.left
+    end
+
+    # center tensor: random, connects left and right halves
+    χl_c = tensors[mid].right.dim
+    χr_c = tensors[mid+2].left.dim
+    d_c  = sites[mid+1].dim
+    center_storage = randn(T, χl_c, d_c, χr_c)
+    center_storage ./= norm(center_storage)  # normalize
+    tensors[mid+1] = MPSTensor(center_storage,
+                                tensors[mid].right,
+                                sites[mid+1],
+                                tensors[mid+2].left)
+
+    return MPS(tensors, mid, mid + 2)
+end
+
+function random_mps(sites::Vector{<:Index}, linkdim::Int)
+    return random_mps(Float64, sites, linkdim)
+end
+
+function _shift_center_right!(mps::MPS, i::Int)
+    Q, R = qr(mps.tensors[i]; direction=LeftOrthogonal)
+
+    next    = mps.tensors[i+1]
+    χ       = Q.right.dim
+    χl2     = next.left.dim
+    d2      = next.site.dim
+    χr2     = next.right.dim
+
+    next_mat = reshape(next.storage, χl2, d2 * χr2)
+    new_next = reshape(R.storage * next_mat, χ, d2, χr2)
+
+    mps.tensors[i]   = Q
+    mps.tensors[i+1] = MPSTensor(new_next, Q.right, next.site, next.right)
+end
+
+function _shift_center_left!(mps::MPS, i::Int)
+    L, Q = qr(mps.tensors[i]; direction=RightOrthogonal)
+
+    prev    = mps.tensors[i-1]
+    χ       = Q.left.dim
+    χl1     = prev.left.dim
+    d1      = prev.site.dim
+    χr1     = prev.right.dim
+
+    prev_mat = reshape(prev.storage, χl1 * d1, χr1)
+    new_prev = reshape(prev_mat * L.storage, χl1, d1, χ)
+
+    mps.tensors[i]   = Q
+    mps.tensors[i-1] = MPSTensor(new_prev, prev.left, prev.site, Q.left)
+end
+
+function orthogonalize!(mps::MPS, center::Int)
+    L = length(mps)
+    @assert 1 <= center <= L "Center $center out of bounds for MPS of length $L"
+
+    # left sweep: llim+1 up to center-1
+    for i in mps.llim+1 : center-1
+        _shift_center_right!(mps, i)
+    end
+
+    # right sweep: rlim-1 down to center+1
+    for i in mps.rlim-1 : -1 : center+1
+        _shift_center_left!(mps, i)
+    end
+
+    # update limits
+    mps.llim = center - 1
+    mps.rlim = center + 1
+
+    return mps
+end
+
+function orthogonalize(mps::MPS, center::Int)
+    return orthogonalize!(copy(mps), center)
+end
+
+linkdim(ψ::MPS, i::Int) = ψ[i].right.dim
+
+# dag: conjugate the MPS storage
+function Base.conj(ψ::MPS{T}) where {T}
+    tensors = [MPSTensor(conj(t.storage), t.left, t.site, t.right) 
+               for t in ψ.tensors]
+    return MPS(tensors, ψ.llim, ψ.rlim)
+end
+
+Base.adjoint(ψ::MPS) = conj(ψ) # to use ', even if no transpose is performed
+
+# sim: replace link indices with fresh ones of same dimension
+function sim_linkinds(ψ::MPS{T}) where {T}
+    L = length(ψ)
+    tensors = Vector{MPSTensor{T, Array{T,3}}}(undef, L)
+    
+    # create new link indices
+    new_links = [Index(linkdim(ψ, i), :Link) for i in 1:L-1]
+    
+    # boundary indices
+    left_bdry  = Index(1, :Link)
+    right_bdry = Index(1, :Link)
+    
+    for i in 1:L
+        left  = i == 1   ? left_bdry    : new_links[i-1]
+        right = i == L   ? right_bdry   : new_links[i]
+        tensors[i] = MPSTensor(ψ[i].storage, left, ψ[i].site, right)
+    end
+    
+    return MPS(tensors, ψ.llim, ψ.rlim)
+end
+
+function inner(ψ::MPS{T}, φ::MPS{T}) where {T}
+    L = length(ψ)
+    @assert length(φ) == L "MPS must have the same length"
+    for i in 1:L
+        @assert ψ[i].site == φ[i].site "Site index mismatch at site $i"
+    end
+
+    # sim the link indices of φ to avoid conflicts with ψ
+    ψ = sim_linkinds(ψ')
+
+    # initialize scalar environment
+    E = DenseTensor(
+        (ψ[1].left, φ[1].left),
+        fill(one(T), 1, 1)
+    )
+
+    for i in 1:L
+        Eψ = contract(E, to_dense(ψ[i]))
+        E  = contract(Eψ, to_dense(φ[i]))
+    end
+
+    return E.storage[]
+end

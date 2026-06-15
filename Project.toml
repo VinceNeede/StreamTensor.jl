@@ -1,0 +1,28 @@
+name = "StreamTensor"
+uuid = "4a7826aa-4f79-4f59-b8ef-2d4908044b21"
+version = "0.1.0"
+authors = ["VinceNeede <v.bisogno3@studenti.unipi.it>"]
+
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+ITensorMPS = "0d1a4710-d33b-49a5-8f18-73bdf49b47e2"
+ITensors = "9136182c-28ba-11e9-034c-db9fb085ebd5"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MKL = "33e6dc65-8f57-5167-99aa-e5a354878fb2"
+ProfileView = "c46f51b8-102a-5cf2-8d2c-8597cb0e0da7"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Strided = "5e0ebb24-38b0-5f93-81fe-25c709ecae67"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+BenchmarkTools = "1.8.0"
+CUDA = "6.2.0"
+ITensorMPS = "0.4.1"
+ITensors = "0.9.30"
+LinearAlgebra = "1.12.0"
+MKL = "0.9.1"
+ProfileView = "1.10.3"
+StaticArrays = "1.9.18"
+Strided = "2.6.0"
+Test = "1.11.0"
