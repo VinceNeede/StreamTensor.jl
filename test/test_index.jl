@@ -2,11 +2,11 @@
     @testset "construction" begin
         i = Index(3, :Site)
         @test i.dim == 3
-        @test i.tag == Site
+        @test hastag(i, :Site)
 
         j = Index(4, :Link)
         @test j.dim == 4
-        @test j.tag == Link
+        @test hastag(j, :Link)
     end
 
     @testset "uniqueness" begin
@@ -38,7 +38,7 @@
         i = Index(3, :Site)
         ip = i'
         @test ip.dim == i.dim
-        @test ip.tag == i.tag
+        @test tags(ip) == tags(i)
         @test ip != i
     end
 end
