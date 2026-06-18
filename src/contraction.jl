@@ -1,5 +1,3 @@
-using StaticArrays
-
 function _find_contracted_free(
     inds_a::NTuple{NA, Index},
     inds_b::NTuple{NB, Index}
@@ -46,12 +44,23 @@ function _find_contracted_free(
         for i in 1:nc;           perm_b_mut[i] = c_b[i];       end
         for i in 1:nfb;          perm_b_mut[nc + i] = f_b[i];  end
     end
-    
-    return Tuple(perm_a_mut), Tuple(perm_b_mut), nc, nfa, nfb
+    perm_a = Tuple(perm_a_mut)
+    perm_b = Tuple(perm_b_mut)
+    return perm_a, perm_b, nc, nfa, nfb
 end
 function _maybe_permute(storage::AbstractArray{T,N}, perm::NTuple{N, Int}) where {T,N}
     issorted(perm) && return storage
-    return Array(@strided permutedims(storage, collect(perm)))
+    return permutedims(storage, collect(perm))
+end
+
+function _matricize(storage::AbstractArray{T,N}, perm::NTuple{N,Int}, ngroup1::Int, d_first::Int, d_second::Int) where {T,N}
+    if issorted(perm)
+        return reshape(storage, d_first, d_second)
+    end
+    if perm == (ntuple(i -> ngroup1+i, N-ngroup1)..., ntuple(identity, ngroup1)...)
+        return transpose(reshape(storage, d_second, d_first))
+    end
+    return reshape(_maybe_permute(storage, perm), d_first, d_second)
 end
 
 function contract(A::DenseTensor{T,NA}, B::DenseTensor{T,NB}) where {T,NA,NB}
@@ -59,9 +68,6 @@ function contract(A::DenseTensor{T,NA}, B::DenseTensor{T,NB}) where {T,NA,NB}
     inds_b = inds(B)
 
     perm_a, perm_b, nc, nfa, nfb = _find_contracted_free(inds_a, inds_b)
-
-    a_p = _maybe_permute(A.storage, perm_a)
-    b_p = _maybe_permute(B.storage, perm_b)
 
     inds_a_p = ntuple(i -> inds_a[perm_a[i]], Val(NA))
     inds_b_p = ntuple(i -> inds_b[perm_b[i]], Val(NB))
@@ -73,8 +79,8 @@ function contract(A::DenseTensor{T,NA}, B::DenseTensor{T,NB}) where {T,NA,NB}
     free_dim_b = 1
     for i in (nc+1):NB;  free_dim_b *= inds_b_p[i].dim; end
 
-    a_mat = reshape(a_p, free_dim_a, cont_dim)
-    b_mat = reshape(b_p, cont_dim, free_dim_b)
+    a_mat = _matricize(A.storage, perm_a, nc, free_dim_a, cont_dim)
+    b_mat = _matricize(B.storage, perm_b, nfb, cont_dim, free_dim_b)
 
     c_storage = Matrix{T}(undef, free_dim_a, free_dim_b)
     mul!(c_storage, a_mat, b_mat)
