@@ -93,11 +93,11 @@ function Base.conj(t::DiagTensor)
 end
 
 function Base.conj(t::MPSTensor{T}) where {T}
-    return MPSTensor(conj(t.storage), t.right, t.site, t.left)
+    return MPSTensor(conj(t.storage), t.left, t.site, t.right)
 end
 
 function Base.conj(t::MPOTensor{T}) where {T}
-    return MPOTensor(conj(t.storage), t.right, t.site_in, t.site_out, t.left)
+    return MPOTensor(conj(t.storage), t.left, t.site_in, t.site_out, t.right)
 end
 
 prime(t::MPSTensor) = MPSTensor(t.storage, t.left', t.site', t.right')
@@ -106,13 +106,19 @@ prime(t::DenseTensor) = DenseTensor(prime.(inds(t)), t.storage)
 prime(t::DiagTensor) = DiagTensor(prime.(inds(t)), t.storage)
 prime(t::AbstractTensor) = prime(to_dense(t))
 
+noprime(t::MPSTensor) = MPSTensor(t.storage, noprime.(inds(t))...)
+noprime(t::MPOTensor) = MPOTensor(t.storage, noprime.(inds(t))...)
+noprime(t::DenseTensor) = DenseTensor(noprime.(inds(t)), t.storage)
+noprime(t::DiagTensor) = DiagTensor(noprime.(inds(t)), t.storage)
+noprime(t::AbstractTensor) = noprime(to_dense(t))
+
 dag(t::AbstractTensor) = prime(conj(t))
 
 function _drop_trivial_dims(t::AbstractTensor)
     td = to_dense(t)
     inds_td = inds(td)
     new_inds = filter(i -> dim(i) != 1, inds_td)
-    drop_dims = findall(==(1), size(td.storage))
+    drop_dims = Tuple(findall(==(1), size(td.storage)))
     new_storage = dropdims(td.storage; dims = drop_dims)
     return DenseTensor(new_inds, new_storage)
 end
