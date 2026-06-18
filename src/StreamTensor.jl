@@ -1,7 +1,8 @@
 module StreamTensor
 
 using LinearAlgebra
-using Strided
+using StaticArrays
+import KrylovKit: eigsolve
 
 include("sitetypes/tags.jl")
 include("index.jl")
@@ -14,6 +15,7 @@ include("mpo.jl")
 include("opsum.jl")
 include("sitetypes/sitetypes.jl")
 include("sitetypes/qubit.jl")
+include("dmrg.jl")
 
 # ==================
 # Index
@@ -50,6 +52,7 @@ export svd, qr
 export AbstractTensorTrain
 export nsites, leftlim, rightlim, isortho, orthocenter
 export setleftlim!, setrightlim!
+export linkind, linkinds, maxlinkdim
 
 # ==================
 # MPS
@@ -73,5 +76,10 @@ export siteind, siteinds
 export state
 export op
 export product_state
+
+# ==================
+# DMRG
+# ==================
+export ProjMPO, dmrg!
 
 end
