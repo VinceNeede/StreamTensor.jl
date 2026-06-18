@@ -18,12 +18,16 @@ Base.iterate(tt::AbstractTensorTrain)           = iterate(tt.tensors)
 Base.iterate(tt::AbstractTensorTrain, state)    = iterate(tt.tensors, state)
 
 function Base.show(io::IO, tt::AbstractTensorTrain)
-    println(io, "$typeof(tt):")
+    println(io, "$(typeof(tt)):")
     for (i, t) in enumerate(tt)
         println(io, "\t[$i]: $(inds(t))")
     end
 end
 
+
+linkind(tt::AbstractTensorTrain, i::int) = tt[i].right
+linkinds(tt::AbstractTensorTrain) = [linkind(tt, i) for i in 1:length(tt)]
+maxlinkdim(tt::AbstractTensorTrain) = maximum(dims(linkinds(tt)))
 nsites(tt::AbstractTensorTrain)                 = length(tt.tensors)
 Base.eltype(::AbstractTensorTrain{T}) where {T} = T
 leftlim(tt::AbstractTensorTrain)                = tt.llim
