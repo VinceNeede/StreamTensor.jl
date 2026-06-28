@@ -42,11 +42,6 @@ function DeltaTensor(inds::NTuple{N, Index}) where {N}
 end
 
 """
-    MPSTensor{T, A <: AbstractArray{T,3}}
-Concrete type of a tensor with 3 ordered legs. The canonical order is:
-    left link - site - right link
-"""
-"""
     MPSTensor{T, A}
 
 A rank-3 tensor representing one site of an MPS.  The storage axes follow the
@@ -196,10 +191,6 @@ noprime(t::DenseTensor) = DenseTensor(noprime.(inds(t)), t.storage)
 noprime(t::DiagTensor) = DiagTensor(noprime.(inds(t)), t.storage)
 noprime(t::AbstractTensor) = noprime(to_dense(t))
 
-"""
-    dag(t::AbstractTensor)
-Corresponds to `prime(conj(t))`.
-"""
 """
     dag(t::AbstractTensor) -> AbstractTensor
 
