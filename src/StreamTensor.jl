@@ -2,6 +2,7 @@ module StreamTensor
 
 using LinearAlgebra
 using StaticArrays
+import LinearAlgebra: mul!, norm, Diagonal
 import KrylovKit: eigsolve
 
 include("sitetypes/tags.jl")
@@ -31,9 +32,10 @@ export AbstractTensor
 export DenseTensor, DiagTensor, DeltaTensor
 export MPSTensor, MPOTensor
 
-# Tensor accessors
+# Tensor accessors / operations
 export inds, siteind, siteinds, linkinds
-export to_dense, size, ndims, eltype
+export to_dense, dag
+export size, ndims, eltype
 
 # ==================
 # Contraction
@@ -58,6 +60,7 @@ export linkind, linkinds, maxlinkdim
 # MPS
 # ==================
 export MPS, random_mps
+export siteinds, linkdim, sim_linkinds
 export orthogonalize, orthogonalize!
 export inner
 
@@ -66,20 +69,25 @@ export inner
 # ==================
 export MPO
 export expect
-export OpSum, add!
+
+# ==================
+# OpSum
+# ==================
+export OpSum, OpTerm, add!
 
 # ==================
 # Site types
 # ==================
 export SiteType, OpName, StateName
+export @alias_sitetype
 export siteind, siteinds
 export state
 export op
-export product_state
 
 # ==================
 # DMRG
 # ==================
-export ProjMPO, dmrg!
+export ProjMPO, nsite
+export dmrg_sweep!, dmrg!
 
 end

@@ -4,7 +4,7 @@ function _find_contracted_free(
 ) where {NA, NB}
     
     c_a = zero(MVector{NA, Int})
-    c_b = zero(MVector{NA, Int})
+    c_b = zero(MVector{NB, Int})   # indices into B — needs NB capacity, not NA
     f_a = zero(MVector{NA, Int})
     f_b = zero(MVector{NB, Int})
     
@@ -63,6 +63,15 @@ function _matricize(storage::AbstractArray{T,N}, perm::NTuple{N,Int}, ngroup1::I
     return reshape(_maybe_permute(storage, perm), d_first, d_second)
 end
 
+"""
+    contract(A::DenseTensor, B::DenseTensor) -> DenseTensor
+
+Contract `A` and `B` over all shared indices.  Free indices of `A` come first
+in the output, followed by free indices of `B`, in their original order.
+
+Uses `_matricize` to avoid a copy when the required permutation is an identity
+or a clean two-block swap, falling back to `permutedims` otherwise.
+"""
 function contract(A::DenseTensor{T,NA}, B::DenseTensor{T,NB}) where {T,NA,NB}
     inds_a = inds(A)
     inds_b = inds(B)

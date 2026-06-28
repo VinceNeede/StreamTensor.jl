@@ -3,6 +3,13 @@
 # Internal helpers
 # ==================
 
+"""
+    _truncate(s, U_mat, Vt_mat; maxdim, cutoff) -> (U, s, Vt, truncerr)
+
+Truncate a thin SVD (singular values `s` assumed sorted descending) to at most
+`maxdim` values and/or discard values below `cutoff`.  Returns the sliced
+factors and the relative truncation error `‖s_discarded‖² / ‖s_full‖²`.
+"""
 function _truncate(s::AbstractVector, U_mat::AbstractMatrix, Vt_mat::AbstractMatrix;
                    maxdim::Union{Int, Nothing}=nothing,
                    cutoff::Union{Real, Nothing}=nothing)
@@ -43,6 +50,20 @@ end
 # SVD methods
 # ==================
 
+"""
+    svd(A::AbstractTensor, left_inds::NTuple; maxdim, cutoff)
+        -> (U::DenseTensor, S::DiagTensor, V::DenseTensor, truncerr::Real)
+
+Tensor SVD splitting `A` into `U * S * V`.  `left_inds` identifies which legs
+go onto `U`; the remaining legs go onto `V`.  `S` is a rank-2 `DiagTensor`
+with a fresh pair of bond `Index`es.
+
+Keyword arguments:
+- `maxdim::Int` — keep at most this many singular values.
+- `cutoff::Real` — discard singular values below this threshold.
+
+Returns the truncation error as a fourth value.
+"""
 function LinearAlgebra.svd(A::AbstractTensor, left_inds::NTuple{NL, Index}; kwargs...) where {NL}
     LinearAlgebra.svd(to_dense(A), left_inds; kwargs...)
 end
@@ -97,6 +118,16 @@ end
 
 @enum SVDDirection LeftOrthogonal RightOrthogonal
 
+"""
+    svd(A::MPSTensor; maxdim, cutoff, direction) -> (U, S, V, truncerr)
+
+SVD of a single MPS tensor.
+
+- `direction = LeftOrthogonal` (default): splits `(χl·d | χr)`, returning a
+  left-orthogonal `MPSTensor` `U` and a `DenseTensor` `V` absorbing `S`.
+- `direction = RightOrthogonal`: splits `(χl | d·χr)`, returning a `DenseTensor`
+  `U` and a right-orthogonal `MPSTensor` `V`.
+"""
 function LinearAlgebra.svd(A::MPSTensor{T};
              maxdim::Union{Int, Nothing}=nothing,
              cutoff::Union{Real, Nothing}=nothing,
@@ -129,6 +160,17 @@ function LinearAlgebra.svd(A::MPSTensor{T};
     return U, S, V, truncerr
 end
 
+"""
+    svd(A::MPOTensor; maxdim, cutoff, direction) -> (U, S, V, truncerr)
+
+SVD of a single MPO tensor.  Mirrors the `MPSTensor` convention:
+
+- `LeftOrthogonal`: splits `(χl·d_in·d_out | χr)`.
+- `RightOrthogonal`: splits `(χl | d_in·d_out·χr)`.
+
+Both directions require no storage permutation because the canonical axis order
+`(χl, d_in, d_out, χr)` already groups left and right legs contiguously.
+"""
 function LinearAlgebra.svd(A::MPOTensor{T};
              maxdim::Union{Int, Nothing}=nothing,
              cutoff::Union{Real, Nothing}=nothing,
@@ -161,6 +203,16 @@ function LinearAlgebra.svd(A::MPOTensor{T};
     return U, S, V, truncerr
 end
 
+"""
+    qr(A::MPSTensor; direction) -> (Q, R) or (L, Q)
+
+Thin QR decomposition of a single MPS tensor.
+
+- `direction = LeftOrthogonal` (default): splits `(χl·d | χr)`, returning a
+  left-orthogonal `MPSTensor` `Q` and a `DenseTensor` `R` (upper-triangular).
+- `direction = RightOrthogonal`: splits `(χl | d·χr)` via LQ, returning a
+  `DenseTensor` `L` (lower-triangular) and a right-orthogonal `MPSTensor` `Q`.
+"""
 function LinearAlgebra.qr(A::MPSTensor{T};
              direction::SVDDirection=LeftOrthogonal) where {T}
 

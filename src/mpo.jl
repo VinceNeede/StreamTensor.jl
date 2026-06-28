@@ -1,3 +1,15 @@
+"""
+    MPO{T, A}
+
+A Matrix Product Operator: a chain of `MPOTensor`s sharing bond indices.
+
+## Constructors
+
+    MPO(tensors, llim, rlim)   # raw; validates bond connectivity
+    MPO(tensors)               # unorthogonalized (llim=0, rlim=L+1)
+    MPO(tensors, center)       # orthogonality center at `center`
+    MPO(opsum::OpSum, sites)   # build from an operator sum via finite-state-machine construction
+"""
 mutable struct MPO{T, A <: AbstractArray{T,4}} <: AbstractTensorTrain{T}
     tensors :: Vector{MPOTensor{T,A}}
     llim    :: Int
@@ -19,6 +31,12 @@ Base.copy(H::MPO) = MPO(copy(H.tensors), H.llim, H.rlim)
 Base.deepcopy(H::MPO) = MPO(deepcopy(H.tensors), H.llim, H.rlim)
 
 
+"""
+    expect(ψ::MPS, O::AbstractMatrix, i::Int) -> Real
+
+Compute the single-site expectation value `⟨ψ|O_i|ψ⟩` where `O` is a
+`d×d` matrix acting on site `i`.  `ψ` is first orthogonalized to site `i`.
+"""
 function expect(ψ::MPS{T}, O::AbstractMatrix, i::Int) where {T}
     s     = siteinds(ψ)[i]
     s_out = s'
@@ -64,6 +82,12 @@ function expect(ψ::MPS{T}, O::MPOTensor{T}; i_site=nothing) where {T}
     return real(result.storage[])
 end
 
+"""
+    expect(ψ::MPS, O::AbstractMatrix; sites=1:length(ψ)) -> Vector{Real}
+
+Compute single-site expectation values of operator matrix `O` over the
+given `sites`, returning a `Vector` of real scalars.
+"""
 function expect(ψ::MPS{T}, O::AbstractMatrix; sites::AbstractVector{Int} = 1:length(ψ)) where {T}
     return [expect(ψ, O, i) for i in sites]
 end

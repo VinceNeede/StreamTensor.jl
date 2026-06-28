@@ -1,5 +1,13 @@
+"""
+    AbstractTensor{T, N}
+Abstract type for tensors with `N` legs and eltype `T`.
+"""
 abstract type AbstractTensor{T, N} end
 
+"""
+    DenseTensor{T, N, S <: AbstractArray{T,N}}
+Concrete type for dense tensors.
+"""
 struct DenseTensor{T, N, S <: AbstractArray{T,N}} <: AbstractTensor{T, N}
     inds    :: NTuple{N, Index}
     storage :: S
@@ -10,6 +18,10 @@ struct DenseTensor{T, N, S <: AbstractArray{T,N}} <: AbstractTensor{T, N}
     end
 end
 
+"""
+    DiagTensor{T, N, S <: AbstractVector{T}}
+Concrete type for diagonal tensors.
+"""
 struct DiagTensor{T, N, S <: AbstractVector{T}} <: AbstractTensor{T, N}
     inds    :: NTuple{N, Index}
     storage :: S
@@ -21,22 +33,46 @@ struct DiagTensor{T, N, S <: AbstractVector{T}} <: AbstractTensor{T, N}
     end
 end
 
+"""
+    DeltaTensor(inds::NTuple{N, Index})
+Helper constructor for a `DiagTensor` with only ones on the diagonal.
+"""
 function DeltaTensor(inds::NTuple{N, Index}) where {N}
     return DiagTensor(inds, ones(first(inds).dim))
 end
 
+"""
+    MPSTensor{T, A <: AbstractArray{T,3}}
+Concrete type of a tensor with 3 ordered legs. The canonical order is:
+    left link - site - right link
+"""
+"""
+    MPSTensor{T, A}
+
+A rank-3 tensor representing one site of an MPS.  The storage axes follow the
+fixed convention `(χ_left, d, χ_right)` so that reshape / BLAS operations
+never need a permutation for the common left- and right-orthogonalization
+sweeps.
+
+Fields: `storage`, `left`, `site`, `right`.
+"""
 struct MPSTensor{T, A <: AbstractArray{T,3}} <: AbstractTensor{T, 3}
     storage :: A                  # (χ_left, d, χ_right) — fixed convention
     left    :: Index              # always leg 1
     site    :: Index              # always leg 2  
     right   :: Index              # always leg 3
     function MPSTensor(storage::A, left::Index, site::Index, right::Index) where {T, A <: AbstractArray{T,3}}
-        @assert allunique((left, site, right)) "MPSTensor has repeated indices: $inds"
+        @assert allunique((left, site, right)) "MPSTensor has repeated indices: $((left, site, right))"
         @assert size(storage) == (left.dim, site.dim, right.dim) "Storage shape $(size(storage)) doesn't match index dims $((left.dim, site.dim, right.dim))"
         new{T, A}(storage, left, site, right)
     end
 end
 
+"""
+    MPOTensor{T, A <: AbstractArray{T,4}}
+Concrete type of a tensor with 4 ordered legs. The canonical order is:
+    left link - site_in - site_out - right link
+"""
 struct MPOTensor{T, A <: AbstractArray{T,4}} <: AbstractTensor{T, 4}
     storage  :: A                  # (χ_left, d_in, d_out, χ_right)
     left     :: Index
@@ -44,25 +80,53 @@ struct MPOTensor{T, A <: AbstractArray{T,4}} <: AbstractTensor{T, 4}
     site_out :: Index
     right    :: Index
     function MPOTensor(storage::A, left::Index, site_in::Index, site_out::Index, right::Index) where {T, A <: AbstractArray{T,4}}
-        @assert allunique((left, site_in, site_out, right)) "MPOTensor has repeated indices: $inds"
+        @assert allunique((left, site_in, site_out, right)) "MPOTensor has repeated indices: $((left, site_in, site_out, right))"
         @assert size(storage) == (left.dim, site_in.dim, site_out.dim, right.dim) "Storage shape $(size(storage)) doesn't match index dims $((left.dim, right.dim, site_in.dim, site_out.dim))"
         new{T, A}(storage, left, site_in, site_out, right)
     end
 end
 
+"""
+    inds(t::AbstractTensor) -> NTuple{N, Index}
+Return the indices of `t`.
+"""
 inds(t::AbstractTensor) = t.inds
 inds(t::MPSTensor) = (t.left, t.site, t.right)
 inds(t::MPOTensor) = (t.left, t.site_in, t.site_out, t.right)
+"""
+    siteind(t::MPSTensor) -> Index
+Return the site index of `t`.
+"""
 siteind(t::MPSTensor) = t.site
+"""
+    siteinds(t::MPSTensor) -> NTuple{2, Index}
+Return the site indices of `t`.
+"""
 siteinds(t::MPOTensor) = (t.site_in, t.site_out)
+"""
+    linkinds(t::MPSTensor) -> NTuple{2, Index}
+Return the link indices of `t`.
+"""
 linkinds(t::Union{MPSTensor, MPOTensor}) = (t.left, t.right)
 
+"""
+    Base.ndims(t::AbstractTensor) -> Int
+Return the number of legs of `t`.
+"""
 Base.ndims(::AbstractTensor{T,N}) where {T,N} = N
+"""
+    Base.eltype(t::AbstractTensor) -> T
+Return the element type of `t`.
+"""
 Base.eltype(::AbstractTensor{T,N}) where {T,N} = T
 
 Base.size(t::AbstractTensor) = dims(inds(t))
 Base.size(t::AbstractTensor, n::Int) = dim(inds(t)[n])
 
+"""
+    to_dense(t::AbstractTensor) -> DenseTensor
+Utility function to convert `t` to a `DenseTensor`.
+"""
 function to_dense(t::AbstractTensor)
     DenseTensor(inds(t), t.storage)
 end
@@ -79,11 +143,21 @@ function to_dense(D::DiagTensor{T, N}) where {T, N}
     return DenseTensor(inds(D), storage)
 end
 
+"""
+    _to_mpstensor(t::DenseTensor{T, 3}) -> MPSTensor
+
+Internal helper: reinterpret a rank-3 `DenseTensor` whose indices are
+`(left, site, right)` as an `MPSTensor` without copying storage.
+"""
 function _to_mpstensor(t::DenseTensor{T, 3}) where {T}
     l, s, r = inds(t)
     MPSTensor(t.storage, l, s, r)
 end
 
+"""
+    Base.conj(t::AbstractTensor) -> AbstractTensor
+Return a tensor with same indices as `t` but with the conjugated storage.
+"""
 function Base.conj(t::DenseTensor{T}) where {T}
     return DenseTensor(inds(t), conj(t.storage))
 end
@@ -100,18 +174,38 @@ function Base.conj(t::MPOTensor{T}) where {T}
     return MPOTensor(conj(t.storage), t.left, t.site_in, t.site_out, t.right)
 end
 
+"""
+    prime(t::AbstractTensor) -> AbstractTensor
+Return a tensor with same storage as `t` but with the primed indices. The storage
+is a view of the original tensor.
+"""
 prime(t::MPSTensor) = MPSTensor(t.storage, t.left', t.site', t.right')
 prime(t::MPOTensor) = MPOTensor(t.storage, t.left', t.site_in', t.site_out', t.right')
 prime(t::DenseTensor) = DenseTensor(prime.(inds(t)), t.storage)
 prime(t::DiagTensor) = DiagTensor(prime.(inds(t)), t.storage)
 prime(t::AbstractTensor) = prime(to_dense(t))
 
+"""
+    noprime(t::AbstractTensor) -> AbstractTensor
+Return a tensor with same storage as `t` but with the unprimed indices. The storage
+is a view of the original tensor.
+"""
 noprime(t::MPSTensor) = MPSTensor(t.storage, noprime.(inds(t))...)
 noprime(t::MPOTensor) = MPOTensor(t.storage, noprime.(inds(t))...)
 noprime(t::DenseTensor) = DenseTensor(noprime.(inds(t)), t.storage)
 noprime(t::DiagTensor) = DiagTensor(noprime.(inds(t)), t.storage)
 noprime(t::AbstractTensor) = noprime(to_dense(t))
 
+"""
+    dag(t::AbstractTensor)
+Corresponds to `prime(conj(t))`.
+"""
+"""
+    dag(t::AbstractTensor) -> AbstractTensor
+
+Return the "dagger" of `t`: conjugated storage with all indices primed.
+Equivalent to `prime(conj(t))`.
+"""
 dag(t::AbstractTensor) = prime(conj(t))
 
 function _drop_trivial_dims(t::AbstractTensor)

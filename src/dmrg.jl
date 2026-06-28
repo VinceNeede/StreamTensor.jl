@@ -1,5 +1,19 @@
 const _DEFAULT_EIGSOLVE_KWARGS = (krylovdim=6, maxiter=5)
 
+"""
+    ProjMPO{T,N}
+
+Projected MPO (effective Hamiltonian) for DMRG.  Caches left and right
+environments so that each local eigenvalue problem only contracts the tensors
+inside the active window.
+
+- `N ∈ {1, 2}` is the number of active sites per step (type parameter).
+- `env[i]` stores the left environment up through site `i` (when `i ≤ lpos`)
+  or the right environment through site `i` (when `i ≥ rpos`).
+- `lpos` / `rpos` track which environments are currently valid.
+
+Construct with `ProjMPO(H, nsite=2)` and advance with [`position!`](@ref).
+"""
 mutable struct ProjMPO{T,N}
     H::MPO
     env::Vector{T}  # Env[i] = left-environment "through site i", for i <= lpos
@@ -57,6 +71,13 @@ function _extend_env(E::DenseTensor{T, 3}, ψi::MPSTensor, Hi::MPOTensor) where 
     return E * ψi * Hi * dag(ψi)
 end
 
+"""
+    position!(P::ProjMPO, ψ::MPS, pos::Int) -> ProjMPO
+
+Incrementally extend or shrink the cached environments so that the active
+window covers sites `pos : pos + nsite(P) - 1`.  Boundary tensors (at site 1
+or `L`) have their trivial link index dropped before contraction.
+"""
 function position!(P::ProjMPO, ψ::MPS, pos::Int)
     L = length(ψ)
     lpos_target = pos - 1
@@ -84,6 +105,15 @@ function _align(t::DenseTensor, ref_inds::NTuple{N,Index}) where N
     return DenseTensor(ref_inds, _maybe_permute(t.storage, perm))
 end
 
+"""
+    product(P::ProjMPO, ϕ::AbstractTensor) -> DenseTensor
+
+Apply the effective Hamiltonian `P` to the local tensor `ϕ` (rank 3 for
+`nsite=1`, rank 4 for `nsite=2`).  Contracts cached environments and MPO
+tensors in the efficient left-associative "zip-up" order, then realigns the
+output indices to match `inds(ϕ)` exactly (required for the `eigsolve` map
+to be a well-defined linear operator on `vec(ϕ)`).
+"""
 function product(P::ProjMPO, ϕ::AbstractTensor)
     L  = length(P.H)
     pos, last = P.lpos + 1, P.rpos - 1
@@ -206,6 +236,21 @@ _realtype(::ProjMPO{Tens}) where {Tens} = _realtype(Tens)
 _sweep_param(p, sw::Int) = p isa AbstractVector ? p[min(sw, length(p))] : p
 _flip(d::SVDDirection) = d == LeftOrthogonal ? RightOrthogonal : LeftOrthogonal
 
+"""
+    dmrg_sweep!(ψ::MPS, P::ProjMPO, direction::SVDDirection;
+                maxdim, cutoff, noise, eigsolve_kwargs)
+        -> (energies, truncerrs, converged)
+
+Perform a single DMRG sweep (left-to-right or right-to-left depending on
+`direction`).  At each site in the sweep range:
+1. Orthogonalize `ψ` to the active position.
+2. Update environments via `position!`.
+3. Solve the local eigenvalue problem with `KrylovKit.eigsolve`.
+4. Decompose the updated local tensor back into the MPS via SVD (nsite=2)
+   or SVD with optional subspace expansion (nsite=1).
+
+Returns per-site vectors of energies, truncation errors, and convergence flags.
+"""
 function dmrg_sweep!(ψ::MPS, P::ProjMPO, direction::SVDDirection;
                       maxdim=nothing, cutoff=nothing, noise=nothing, eigsolve_kwargs=(;))
     rng = range(P, direction)
@@ -229,6 +274,29 @@ function dmrg_sweep!(ψ::MPS, P::ProjMPO, direction::SVDDirection;
     return energies, truncerrs, converged
 end
 
+"""
+    dmrg!(ψ::MPS, P::ProjMPO, nsweeps::Int; kwargs...) -> (ψ, P, sweep_data)
+    dmrg!(ψ::MPS, H::MPO,     nsweeps::Int; nsite=1, kwargs...) -> (ψ, P, sweep_data)
+
+Run `nsweeps` DMRG sweeps (alternating left↔right), minimizing the energy of
+`H` for the MPS `ψ`.
+
+## Keyword arguments
+
+| Argument | Description |
+|----------|-------------|
+| `maxdim` | Max bond dimension per sweep (scalar or `Vector` for a schedule). |
+| `cutoff` | SVD truncation cutoff (scalar or `Vector`). |
+| `noise`  | Subspace-expansion noise (nsite=1 only; scalar or `Vector`; `nothing` to disable). |
+| `eigsolve_kwargs` | Forwarded to `KrylovKit.eigsolve`; merged with `_DEFAULT_EIGSOLVE_KWARGS`. |
+| `start_direction` | `LeftOrthogonal` (default) or `RightOrthogonal`. |
+| `H_scale` | Rough energy scale used to set the initial `eigsolve` tolerance. |
+| `tol_power` | Exponent for adaptive tolerance ratchet: `tol ∝ max_truncerr^tol_power`. |
+| `nsite` | (MPO overload only) Number of active sites per step; 1 or 2. |
+
+Returns the updated `ψ`, the `ProjMPO` `P`, and a `Vector` of per-sweep
+named tuples `(energies, truncerrs, converged)`.
+"""
 function dmrg!(ψ::MPS, P::ProjMPO, nsweeps::Int;
                maxdim=nothing, cutoff=nothing, noise=nothing, eigsolve_kwargs=(;),
                start_direction::SVDDirection=LeftOrthogonal,

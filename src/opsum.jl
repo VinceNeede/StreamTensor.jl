@@ -1,15 +1,50 @@
+"""
+    OpTerm{C<:Number}
+
+A single term in an [`OpSum`](@ref): a scalar coefficient `coeff` and an
+ordered list of `site => (opname, params)` pairs (sorted by site).
+
+Not normally constructed directly — use [`add!`](@ref) or `opsum + (...)`.
+"""
 struct OpTerm{C<:Number}
     coeff::C
     ops::Vector{Pair{Int, Tuple{String,NamedTuple}}}  # site => (opname, params)
 end
 
+"""
+    OpSum
+
+A sum of operator terms used to build an [`MPO`](@ref).
+
+```julia
+H = OpSum()
+H += (J, "Sz", 1, "Sz", 2)
+H += (h, "Sx", 1)
+mpo = MPO(H, sites)
+```
+
+Each term is a `Tuple` whose first element is the numeric coefficient, followed
+by alternating `opname, site` pairs.  Parametric operators use a
+`(name, NamedTuple)` pair in place of the bare name string.
+
+See also: [`add!`](@ref), [`MPO`](@ref).
+"""
 struct OpSum
     terms::Vector{OpTerm}
 end
 
 OpSum() = OpSum(OpTerm[])
 
+"""
+    add!(opsum::OpSum, coeff, ops::Pair{Int,Tuple{String,NamedTuple}}...) -> OpSum
+    add!(opsum::OpSum, term::Tuple) -> OpSum
 
+Append a new term to `opsum` (mutating).
+
+The low-level form takes a numeric `coeff` and explicit `site => (name, params)`
+pairs.  The high-level tuple form parses `(coeff, name, site, name, site, …)`,
+normalising bare strings to `(name, (;))` automatically.
+"""
 function add!(opsum::OpSum, coeff::Number, ops::Pair{Int,Tuple{String,NamedTuple}}...)
     push!(opsum.terms, OpTerm(coeff, sort(collect(ops); by=first)))
     return opsum
@@ -56,6 +91,12 @@ function add!(opsum::OpSum, term::Tuple{Vararg})
     return add!(opsum, coeff, ops...)
 end
 
+"""
+    opsum + term -> OpSum
+
+Syntactic sugar for `add!(opsum, term)`.  Mutates `opsum` in place and
+returns it (despite the `+` spelling) so that the idiom `H += (coeff, ...)` works.
+"""
 function Base.:+(opsum::OpSum, term::Tuple{Vararg})
     return add!(opsum, term)
 end

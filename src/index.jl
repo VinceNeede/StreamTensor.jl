@@ -53,11 +53,25 @@ _sitetype_symbol(::Type{SiteType{S}}) where {S} = S
 sitetype(i::Index) = i.sitetype === Symbol() ? nothing : SiteType{i.sitetype}()
 
 # ── Priming ──────────────────────────────────────────────────────────────────
-
-Base.adjoint(i::Index) =
+"""
+    Base.adjoint(i::Index) -> Index
+    prime(i::Index) -> Index
+Return a new index that is primed.
+    prime(i) == i' ≠ i
+    prime(prime(i)) == i
+"""
+function Base.adjoint(i::Index)
     Index(i.id, i.dim, i.tags, i.ntags, !i.primed, i.sitetype)
+end
 
-noprime(i::Index) = Index(i.id, i.dim, i.tags, i.ntags, false, i.sitetype)
+"""
+    noprime(i::Index) -> Index
+Return a new index that is unprimed.
+"""
+function noprime(i::Index) 
+    Index(i.id, i.dim, i.tags, i.ntags, false, i.sitetype)
+end
+
 prime(i::Index)   = i'
 isprime(i::Index) = i.primed
 
@@ -112,6 +126,16 @@ function Base.show(io::IO, i::Index)
 end
 
 # ── Dimension helpers ────────────────────────────────────────────────────────
+"""
+    dim(i::Index) -> Int
+Return the dimension of `i`.
+"""
+function dim(i::Index)
+    return i.dim
+end
 
-dim(i::Index)   = i.dim
+"""
+    dims(inds) -> NTuple
+For a collection of indices `inds`, returns their dimension.
+"""
 dims(inds)      = ntuple(k -> inds[k].dim, length(inds))

@@ -1,4 +1,20 @@
 
+"""
+    MPS{T, A}
+
+A Matrix Product State: a chain of `MPSTensor`s sharing bond indices.
+
+The orthogonality window `(llim, rlim)` tracks which sites are known to be
+orthogonalized.  Use [`orthogonalize!`](@ref) / [`orthogonalize`](@ref) to
+move the center, and [`leftlim`](@ref) / [`rightlim`](@ref) to query it.
+
+## Constructors
+
+    MPS(tensors, llim, rlim)           # raw constructor, validates bond connectivity
+    MPS(tensors)                        # assumes unorthogonalized (llim=0, rlim=L+1)
+    MPS(T, sites, labels)              # product state from site labels (strings or (name,params) tuples)
+    MPS(sites, labels)                 # defaults to Float64
+"""
 mutable struct MPS{T, A <: AbstractArray{T,3}} <: AbstractTensorTrain{T}
     tensors :: Vector{MPSTensor{T,A}}
     llim    :: Int
@@ -60,8 +76,23 @@ end
 Base.copy(ψ::MPS) = MPS(copy(ψ.tensors), ψ.llim, ψ.rlim)
 Base.deepcopy(ψ::MPS) = MPS(deepcopy(ψ.tensors), ψ.llim, ψ.rlim)
 
+"""
+    siteinds(ψ::MPS) -> Vector{Index}
+
+Return the physical (site) indices of `ψ` in site order.
+"""
 siteinds(ψ::MPS) = [t.site for t in ψ.tensors]
 
+"""
+    random_mps([T=Float64,] sites, linkdim) -> MPS
+
+Construct a random MPS over `sites` with maximum bond dimension `linkdim`.
+The state is built in mixed-canonical form with the orthogonality center at
+`L÷2 + 1`: the left half is left-orthogonalized via QR, the right half is
+right-orthogonalized via QR, and the center tensor is normalized.
+
+`T` sets the element type (default `Float64`).
+"""
 function random_mps(::Type{T}, sites::Vector{<:Index}, linkdim::Int) where {T}
     L = length(sites)
     tensors = Vector{MPSTensor{T, Array{T, 3}}}(undef, L)
@@ -144,6 +175,12 @@ function _shift_center_left!(mps::MPS, i::Int)
     mps.tensors[i-1] = MPSTensor(new_prev, prev.left, prev.site, Q.left)
 end
 
+"""
+    orthogonalize!(mps::MPS, center::Int) -> MPS
+
+In-place: sweep left and right to bring the orthogonality center to site
+`center` using QR decompositions.  Updates `mps.llim` and `mps.rlim`.
+"""
 function orthogonalize!(mps::MPS, center::Int)
     L = length(mps)
     @assert 1 <= center <= L "Center $center out of bounds for MPS of length $L"
@@ -165,6 +202,12 @@ function orthogonalize!(mps::MPS, center::Int)
     return mps
 end
 
+"""
+    orthogonalize(mps::MPS, center::Int) -> MPS
+
+Non-mutating version of [`orthogonalize!`](@ref): returns a copy of `mps`
+with orthogonality center at site `center`.
+"""
 function orthogonalize(mps::MPS, center::Int)
     return orthogonalize!(copy(mps), center)
 end
@@ -201,6 +244,13 @@ function sim_linkinds(ψ::MPS{T}) where {T}
     return MPS(tensors, ψ.llim, ψ.rlim)
 end
 
+"""
+    inner(ψ::MPS, φ::MPS) -> Number
+
+Compute the inner product `⟨ψ|φ⟩` by contracting the two MPS left-to-right.
+`ψ` is automatically conjugated.  Both MPS must have the same length and
+matching site indices.
+"""
 function inner(ψ::MPS{T}, φ::MPS{T}) where {T}
     L = length(ψ)
     @assert length(φ) == L "MPS must have the same length"
