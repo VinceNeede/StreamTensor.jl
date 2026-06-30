@@ -139,6 +139,203 @@
         @test orthocenter(mps) == 3
     end
 
+    @testset "compress!" begin
+
+        @testset "no truncation needed (maxdim larger than bond dims) ≈ orthogonalize!" begin
+            sites = [Index(2, :Site) for _ in 1:5]
+            mps1  = random_mps(Float64, sites, 4)
+            mps2  = copy(mps1)
+
+            orthogonalize!(mps1, 3)
+            compress!(mps2, 3; maxdim=100)  # never binds, falls back to QR path
+
+            @test mps1.llim == mps2.llim
+            @test mps1.rlim == mps2.rlim
+
+            # both should represent (numerically) the same state up to gauge:
+            # compare via inner product against itself / each other
+            @test inner(mps1, mps1) ≈ inner(mps2, mps2) atol=1e-10
+            @test abs(inner(mps1, mps2)) ≈ sqrt(inner(mps1, mps1) * inner(mps2, mps2)) atol=1e-10
+        end
+
+        @testset "maxdim truncation reduces bond dimensions" begin
+            sites = [Index(2, :Site) for _ in 1:8]
+            mps   = random_mps(Float64, sites, 16)
+
+            compress!(mps, 1; maxdim=4)
+
+            for i in 1:length(mps)-1
+                @test mps[i].right.dim <= 4
+            end
+
+            # bond connectivity still holds after truncation
+            for i in 1:length(mps)-1
+                @test mps[i].right == mps[i+1].left
+            end
+        end
+
+        @testset "maxdim truncation preserves norm exactly for low-entanglement state" begin
+            # product state: exactly bond dimension 1, so maxdim=1 truncation is exact
+            sites = [Index(2, :Site) for _ in 1:5]
+            up    = [1.0, 0.0]
+
+            tensors = Vector{MPSTensor{Float64, Array{Float64,3}}}(undef, 5)
+            left = Index(1, :Link)
+            for i in 1:5
+                right = Index(1, :Link)
+                tensors[i] = MPSTensor(reshape(up, 1, 2, 1), left, sites[i], right)
+                left = right
+            end
+            ψ = MPS(tensors, 0, 6)
+
+            compress!(ψ, 1; maxdim=1)
+
+            @test inner(ψ, ψ) ≈ 1.0 atol=1e-10
+            for i in 1:length(ψ)-1
+                @test ψ[i].right.dim == 1
+            end
+        end
+
+        @testset "center and llim/rlim set correctly after compress!" begin
+            sites = [Index(2, :Site) for _ in 1:6]
+            mps   = random_mps(Float64, sites, 8)
+
+            compress!(mps, 4; maxdim=3)
+
+            @test mps.llim == 3
+            @test mps.rlim == 5
+
+            # left orthogonality of sites 1..3
+            for i in 1:3
+                χl, d, χr = size(mps[i].storage)
+                U_mat = reshape(mps[i].storage, χl * d, χr)
+                @test U_mat' * U_mat ≈ I(χr) atol=1e-10
+            end
+
+            # right orthogonality of sites 5..6
+            for i in 5:6
+                χl, d, χr = size(mps[i].storage)
+                V_mat = reshape(mps[i].storage, χl, d * χr)
+                @test V_mat * V_mat' ≈ I(χl) atol=1e-10
+            end
+        end
+
+        @testset "cutoff truncation doesn't blow up the norm" begin
+            sites = [Index(2, :Site) for _ in 1:8]
+            mps   = random_mps(Float64, sites, 16)
+            mps_orig_norm = inner(mps, mps)
+
+            compress!(mps, 1; cutoff=1e-8)
+
+            @test inner(mps, mps) ≈ mps_orig_norm rtol=1e-3
+        end
+
+    end
+
+    @testset "orthogonalize! (ComplexF64)" begin
+        sites = [Index(2, :Site) for _ in 1:5]
+        mps   = random_mps(ComplexF64, sites, 4)
+
+        orthogonalize!(mps, 3)
+
+        @test mps.llim == 2
+        @test mps.rlim == 4
+
+        # left orthogonality of sites 1,2 (note: A' is conjugate transpose for ComplexF64)
+        for i in 1:2
+            χl, d, χr = size(mps[i].storage)
+            U_mat = reshape(mps[i].storage, χl * d, χr)
+            @test U_mat' * U_mat ≈ I(χr) atol=1e-10
+        end
+
+        # right orthogonality of sites 4,5
+        for i in 4:5
+            χl, d, χr = size(mps[i].storage)
+            V_mat = reshape(mps[i].storage, χl, d * χr)
+            @test V_mat * V_mat' ≈ I(χl) atol=1e-10
+        end
+    end
+
+    @testset "compress! (ComplexF64)" begin
+
+        @testset "no truncation needed ≈ orthogonalize!" begin
+            sites = [Index(2, :Site) for _ in 1:5]
+            mps1  = random_mps(ComplexF64, sites, 4)
+            mps2  = copy(mps1)
+
+            orthogonalize!(mps1, 3)
+            compress!(mps2, 3; maxdim=100)  # never binds, falls back to QR path
+
+            @test mps1.llim == mps2.llim
+            @test mps1.rlim == mps2.rlim
+
+            @test inner(mps1, mps1) ≈ inner(mps2, mps2) atol=1e-10
+            @test abs(inner(mps1, mps2)) ≈ sqrt(real(inner(mps1, mps1)) * real(inner(mps2, mps2))) atol=1e-10
+        end
+
+        @testset "maxdim truncation reduces bond dimensions, all sites" begin
+            sites = [Index(2, :Site) for _ in 1:6]
+            mps   = random_mps(ComplexF64, sites, 8)
+
+            compress!(mps, 1; maxdim=4)
+
+            @test mps.llim == 0
+            @test mps.rlim == 2
+
+            for i in 1:length(mps)-1
+                @test mps[i].right.dim <= 4
+            end
+            for i in 1:length(mps)-1
+                @test mps[i].right == mps[i+1].left
+            end
+        end
+
+        @testset "maxdim=1 exact on complex product state" begin
+            sites = [Index(2, :Site) for _ in 1:5]
+            plus  = ComplexF64.([1.0, 1.0] / sqrt(2))
+
+            tensors = Vector{MPSTensor{ComplexF64, Array{ComplexF64,3}}}(undef, 5)
+            left = Index(1, :Link)
+            for i in 1:5
+                right = Index(1, :Link)
+                tensors[i] = MPSTensor(reshape(plus, 1, 2, 1), left, sites[i], right)
+                left = right
+            end
+            ψ = MPS(tensors, 0, 6)
+
+            compress!(ψ, 1; maxdim=1)
+
+            @test real(inner(ψ, ψ)) ≈ 1.0 atol=1e-10
+            @test imag(inner(ψ, ψ)) ≈ 0.0 atol=1e-10
+            for i in 1:length(ψ)-1
+                @test ψ[i].right.dim == 1
+            end
+        end
+
+    end
+
+    @testset "compress (non-mutating)" begin
+        sites = [Index(2, :Site) for _ in 1:6]
+        mps   = random_mps(Float64, sites, 8)
+
+        mps_before_llim = mps.llim
+        mps_before_rlim = mps.rlim
+        bonds_before = [mps[i].right.dim for i in 1:length(mps)-1]
+
+        mps2 = compress(mps, 1; maxdim=3)
+
+        # original unchanged
+        @test mps.llim == mps_before_llim
+        @test mps.rlim == mps_before_rlim
+        @test [mps[i].right.dim for i in 1:length(mps)-1] == bonds_before
+
+        # copy is truncated
+        for i in 1:length(mps2)-1
+            @test mps2[i].right.dim <= 3
+        end
+        @test orthocenter(mps2) == 1
+    end
+
     @testset "copy" begin
         sites = [Index(2, :Site) for _ in 1:5]
         mps   = random_mps(Float64, sites, 4)

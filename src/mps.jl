@@ -206,13 +206,13 @@ function compress!(mps::MPS, center::Int; maxdim=nothing, cutoff=nothing)
     L = length(mps)
     @assert 1 <= center <= L "Center $center out of bounds for MPS of length $L"
 
-    # left sweep: llim+1 up to center-1
-    for i in mps.llim+1 : center-1
+    # left sweep: 1 up to center-1
+    for i in 1 : center-1
         _shift_center_right!(mps, i, maxdim=maxdim, cutoff=cutoff)
     end
 
-    # right sweep: rlim-1 down to center+1
-    for i in mps.rlim-1 : -1 : center+1
+    # right sweep: L-1 down to center+1
+    for i in L : -1 : center+1
         _shift_center_left!(mps, i, maxdim=maxdim, cutoff=cutoff)
     end
 
