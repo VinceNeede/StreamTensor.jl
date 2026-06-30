@@ -5,6 +5,7 @@ using StreamTensor
     include("test_index.jl")
     include("test_tensor.jl")
     include("test_contraction.jl")
+    include("test_combiner.jl")
     include("test_deomposition.jl")
     include("test_mps.jl")
 end

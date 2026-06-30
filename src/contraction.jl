@@ -236,3 +236,32 @@ function contract(A::DiagTensor, B::AbstractTensor)
 end
 
 Base.:*(A::AbstractTensor, B::AbstractTensor) = contract(A, B)
+
+function contract(t::DenseTensor, c::Combiner{N}) where {N}
+    ti = inds(t)
+    if !c.expanding
+        # fuse: c.legs[2:end] (contiguous in t) -> c.legs[1]
+        original, combined = c.legs[2:end], c.legs[1]
+        pos = findfirst(==(original[1]), ti)
+        @assert !isnothing(pos) "Combiner's original indices not found in tensor"
+        @assert pos + N - 2 <= length(ti) "Combiner's indices run past the end of inds(t)"
+        @assert ti[pos:pos+N-2] == original "Indices to combine are not contiguous in inds(t) in Combiner's order"
+
+        old_shape = size(t.storage)
+        new_shape = (old_shape[1:pos-1]..., dim(combined), old_shape[pos+N-1:end]...)
+        new_inds  = (ti[1:pos-1]..., combined, ti[pos+N-1:end]...)
+        return DenseTensor(new_inds, reshape(t.storage, new_shape))
+    else
+        # expand: c.legs[1] (present in t) -> c.legs[2:end]
+        combined, original = c.legs[1], c.legs[2:end]
+        pos = findfirst(==(combined), ti)
+        @assert !isnothing(pos) "Combined index $combined not found in tensor"
+
+        old_shape = size(t.storage)
+        new_shape = (old_shape[1:pos-1]..., dim.(original)..., old_shape[pos+1:end]...)
+        new_inds  = (ti[1:pos-1]..., original..., ti[pos+1:end]...)
+        return DenseTensor(new_inds, reshape(t.storage, new_shape))
+    end
+end
+
+contract(c::Combiner, t::DenseTensor) = contract(t, c)

@@ -29,8 +29,9 @@ export hastag, addtags, removetags, tags, prime, noprime, isprime, sitetype
 # Tensor types
 # ==================
 export AbstractTensor
-export DenseTensor, DiagTensor, DeltaTensor
+export DenseTensor, DiagTensor, DeltaTensor, Combiner
 export MPSTensor, MPOTensor
+export combine
 
 # Tensor accessors / operations
 export inds, siteind, siteinds, linkinds

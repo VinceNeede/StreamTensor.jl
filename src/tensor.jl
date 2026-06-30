@@ -207,3 +207,55 @@ function _drop_trivial_dims(t::AbstractTensor)
     new_storage = dropdims(td.storage; dims = drop_dims)
     return DenseTensor(new_inds, new_storage)
 end
+
+"""
+    Combiner <: AbstractTensor{Bool, N}
+
+A bookkeeping pseudo-tensor that fuses/splits a contiguous block of indices.
+`legs[1]` is the combined index; `legs[2:end]` are the original indices it
+replaces, in order. Carries no real storage — contracting with a `DenseTensor`
+performs a reshape, not arithmetic.
+
+Construct via `combine(inds_to_combine...)`, which generates the combined
+`Index` and returns it alongside the `Combiner`. Apply with `t * c` (fuse)
+or `t * dag(c)` (expand) on a `DenseTensor`. `dag(c::Combiner)` flips its
+role from fusing to expanding.
+"""
+struct Combiner{N} <: AbstractTensor{Bool, N}
+    legs      :: NTuple{N, Index}   # legs[1] = combined, legs[2:end] = original
+    expanding :: Bool               # false: combine direction; true: dag'd, expand direction
+end
+
+Combiner(new_index::Index, original::Index...) =
+    Combiner((new_index, original...), false)
+
+"""
+    dag(c::Combiner) -> Combiner
+
+Flip a `Combiner` from fusing direction to expanding direction (or back).
+Contracting a tensor against `dag(c)` replaces the combined index with the
+original indices it was fused from.
+"""
+dag(c::Combiner) = Combiner(c.legs, !c.expanding)
+
+inds(c::Combiner) = c.legs
+
+"""
+    combine(inds_to_combine::Index...; kwargs...) -> (Combiner, Index)
+
+Create a new `Index` of dimension `prod(dim, inds_to_combine)` and return a
+`Combiner` that fuses `inds_to_combine` into it (or, via `dag`, expands it
+back out). `kwargs` are forwarded to the `Index` constructor for the new
+combined index (e.g. `tags`).
+
+Does not touch any tensor — apply the result via `t * c` (fuse) or
+`t * dag(c)` (expand) on a `DenseTensor` whose `inds` contain
+`inds_to_combine` as a contiguous block, in the order given.
+"""
+function combine(inds_to_combine::Index...; kwargs...)
+    n = length(inds_to_combine)
+    @assert n >= 1 "combine needs at least one index"
+    combined_dim = prod(dim, inds_to_combine)
+    combined = Index(combined_dim; kwargs...)
+    return Combiner(combined, inds_to_combine...), combined
+end
