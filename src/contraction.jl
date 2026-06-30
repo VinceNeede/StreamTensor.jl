@@ -72,7 +72,7 @@ in the output, followed by free indices of `B`, in their original order.
 Uses `_matricize` to avoid a copy when the required permutation is an identity
 or a clean two-block swap, falling back to `permutedims` otherwise.
 """
-function contract(A::DenseTensor{T,NA}, B::DenseTensor{T,NB}) where {T,NA,NB}
+function contract(A::DenseTensor{TA,NA}, B::DenseTensor{TB,NB}) where {TA,TB,NA,NB}
     inds_a = inds(A)
     inds_b = inds(B)
 
@@ -91,6 +91,10 @@ function contract(A::DenseTensor{T,NA}, B::DenseTensor{T,NB}) where {T,NA,NB}
     a_mat = _matricize(A.storage, perm_a, nc, free_dim_a, cont_dim)
     b_mat = _matricize(B.storage, perm_b, nfb, cont_dim, free_dim_b)
 
+    T = promote_type(TA, TB)
+    a_mat = TA === T ? a_mat : T.(a_mat)
+    b_mat = TB === T ? b_mat : T.(b_mat)
+
     c_storage = Matrix{T}(undef, free_dim_a, free_dim_b)
     mul!(c_storage, a_mat, b_mat)
 
@@ -105,10 +109,11 @@ function contract(A::DenseTensor{T,NA}, B::DenseTensor{T,NB}) where {T,NA,NB}
 end
 
 function _contract_dense_diag(
-    A::DenseTensor{T,NA}, 
-    D::DiagTensor{T,ND}, 
+    A::DenseTensor{TA,NA}, 
+    D::DiagTensor{TB,ND}, 
     ::Val{A_is_left}
-) where {T,NA,ND,A_is_left}
+) where {TA,TB,NA,ND,A_is_left}
+    T = promote_type(TA, TB)
     inds_a = inds(A)
     inds_d = inds(D)
 
@@ -118,7 +123,6 @@ function _contract_dense_diag(
         perm_d, perm_a, nc, nfd, nfa = _find_contracted_free(inds_d, inds_a)
     end
 
-    # outer product: materialize and fall through
     if nc == 0
         if A_is_left
             return contract(A, to_dense(D))
@@ -186,15 +190,16 @@ function _contract_dense_diag(
     return DenseTensor(out_inds, out)
 end
 
-function contract(A::DenseTensor{T,NA}, D::DiagTensor{T,ND}) where {T,NA,ND}
+function contract(A::DenseTensor{TA,NA}, D::DiagTensor{TD,ND}) where {TA,TD,NA,ND}
     return _contract_dense_diag(A, D, Val(true))
 end
 
-function contract(D::DiagTensor{T,ND}, A::DenseTensor{T,NA}) where {T,NA,ND}
+function contract(D::DiagTensor{TD,ND}, A::DenseTensor{TA,NA}) where {TA,TD,NA,ND}
     return _contract_dense_diag(A, D, Val(false))
 end
 
-function contract(A::DiagTensor{T,NA}, B::DiagTensor{T,NB}) where {T,NA,NB}
+function contract(A::DiagTensor{TA,NA}, B::DiagTensor{TB,NB}) where {TA,TB,NA,NB}
+    T = promote_type(TA, TB)
     inds_a = inds(A)
     inds_b = inds(B)
 
