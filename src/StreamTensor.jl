@@ -63,6 +63,7 @@ export linkind, linkinds, maxlinkdim
 export MPS, random_mps
 export siteinds, linkdim, sim_linkinds
 export orthogonalize, orthogonalize!
+export compress, compress!
 export inner
 
 # ==================

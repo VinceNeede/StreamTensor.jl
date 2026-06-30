@@ -143,36 +143,36 @@ function random_mps(sites::Vector{<:Index}, linkdim::Int)
     return random_mps(Float64, sites, linkdim)
 end
 
-function _shift_center_right!(mps::MPS, i::Int)
-    Q, R = qr(mps.tensors[i]; direction=LeftOrthogonal)
-
-    next    = mps.tensors[i+1]
-    χ       = Q.right.dim
-    χl2     = next.left.dim
-    d2      = next.site.dim
-    χr2     = next.right.dim
-
-    next_mat = reshape(next.storage, χl2, d2 * χr2)
-    new_next = reshape(R.storage * next_mat, χ, d2, χr2)
-
-    mps.tensors[i]   = Q
-    mps.tensors[i+1] = MPSTensor(new_next, Q.right, next.site, next.right)
+function _needs_truncation(t::MPSTensor, maxdim, cutoff, direction::SVDDirection)
+    isnothing(maxdim) && isnothing(cutoff) && return false
+    !isnothing(cutoff) && return true
+    χl, d, χr = size(t.storage)
+    actual_dim = direction == LeftOrthogonal ? min(χl * d, χr) : min(χl, d * χr)
+    return maxdim < actual_dim
 end
 
-function _shift_center_left!(mps::MPS, i::Int)
-    L, Q = qr(mps.tensors[i]; direction=RightOrthogonal)
+function _shift_center_right!(mps::MPS, i::Int; maxdim=nothing, cutoff=nothing)
+    if _needs_truncation(mps.tensors[i], maxdim, cutoff, LeftOrthogonal)
+        Q, R = qr(mps.tensors[i]; direction=LeftOrthogonal)
+        mps.tensors[i] = Q
+        mps.tensors[i+1] = _to_mpstensor(R * mps.tensors[i+1])
+    else
+        U, S, V, _ = svd(mps.tensors[i]; direction=LeftOrthogonal, maxdim, cutoff)
+        mps.tensors[i] = U
+        mps.tensors[i+1] = _to_mpstensor(S * V * mps.tensors[i+1])
+    end
+end
 
-    prev    = mps.tensors[i-1]
-    χ       = Q.left.dim
-    χl1     = prev.left.dim
-    d1      = prev.site.dim
-    χr1     = prev.right.dim
-
-    prev_mat = reshape(prev.storage, χl1 * d1, χr1)
-    new_prev = reshape(prev_mat * L.storage, χl1, d1, χ)
-
-    mps.tensors[i]   = Q
-    mps.tensors[i-1] = MPSTensor(new_prev, prev.left, prev.site, Q.left)
+function _shift_center_left!(mps::MPS, i::Int; maxdim=nothing, cutoff=nothing)
+    if _needs_truncation(mps.tensors[i], maxdim, cutoff, RightOrthogonal)
+        L, Q = qr(mps.tensors[i]; direction=RightOrthogonal)
+        mps.tensors[i] = Q
+        mps.tensors[i-1] = _to_mpstensor(mps.tensors[i-1] * L)
+    else
+        U, S, V, _ = svd(mps.tensors[i]; direction=RightOrthogonal, maxdim, cutoff)
+        mps.tensors[i] = V
+        mps.tensors[i-1] = _to_mpstensor(mps.tensors[i-1] * U * S)
+    end
 end
 
 """
@@ -202,6 +202,27 @@ function orthogonalize!(mps::MPS, center::Int)
     return mps
 end
 
+function compress!(mps::MPS, center::Int; maxdim=nothing, cutoff=nothing)
+    L = length(mps)
+    @assert 1 <= center <= L "Center $center out of bounds for MPS of length $L"
+
+    # left sweep: llim+1 up to center-1
+    for i in mps.llim+1 : center-1
+        _shift_center_right!(mps, i, maxdim=maxdim, cutoff=cutoff)
+    end
+
+    # right sweep: rlim-1 down to center+1
+    for i in mps.rlim-1 : -1 : center+1
+        _shift_center_left!(mps, i, maxdim=maxdim, cutoff=cutoff)
+    end
+
+    # update limits
+    mps.llim = center - 1
+    mps.rlim = center + 1
+
+    return mps
+end
+
 """
     orthogonalize(mps::MPS, center::Int) -> MPS
 
@@ -210,6 +231,10 @@ with orthogonality center at site `center`.
 """
 function orthogonalize(mps::MPS, center::Int)
     return orthogonalize!(copy(mps), center)
+end
+
+function compress(mps::MPS, center::Int; maxdim=nothing, cutoff=nothing)
+    return compress!(copy(mps), center; maxdim=maxdim, cutoff=cutoff)
 end
 
 linkdim(ψ::MPS, i::Int) = ψ[i].right.dim
