@@ -153,25 +153,25 @@ end
 
 function _shift_center_right!(mps::MPS, i::Int; maxdim=nothing, cutoff=nothing)
     if _needs_truncation(mps.tensors[i], maxdim, cutoff, LeftOrthogonal)
-        Q, R = qr(mps.tensors[i]; direction=LeftOrthogonal)
-        mps.tensors[i] = Q
-        mps.tensors[i+1] = _to_mpstensor(R * mps.tensors[i+1])
-    else
         U, S, V, _ = svd(mps.tensors[i]; direction=LeftOrthogonal, maxdim, cutoff)
         mps.tensors[i] = U
         mps.tensors[i+1] = _to_mpstensor(S * V * mps.tensors[i+1])
+    else
+        Q, R = qr(mps.tensors[i]; direction=LeftOrthogonal)
+        mps.tensors[i] = Q
+        mps.tensors[i+1] = _to_mpstensor(R * mps.tensors[i+1])
     end
 end
 
 function _shift_center_left!(mps::MPS, i::Int; maxdim=nothing, cutoff=nothing)
     if _needs_truncation(mps.tensors[i], maxdim, cutoff, RightOrthogonal)
-        L, Q = qr(mps.tensors[i]; direction=RightOrthogonal)
-        mps.tensors[i] = Q
-        mps.tensors[i-1] = _to_mpstensor(mps.tensors[i-1] * L)
-    else
         U, S, V, _ = svd(mps.tensors[i]; direction=RightOrthogonal, maxdim, cutoff)
         mps.tensors[i] = V
         mps.tensors[i-1] = _to_mpstensor(mps.tensors[i-1] * U * S)
+    else
+        L, Q = qr(mps.tensors[i]; direction=RightOrthogonal)
+        mps.tensors[i] = Q
+        mps.tensors[i-1] = _to_mpstensor(mps.tensors[i-1] * L)
     end
 end
 
