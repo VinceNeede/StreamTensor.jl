@@ -208,4 +208,119 @@ import LinearAlgebra: I, diagm
             @test V_mat * V_mat' ≈ I(χ)
         end
     end
+
+    @testset "MPOTensor QR" begin
+        @testset "LeftOrthogonal: Q is left-orthogonal MPOTensor, R is DenseTensor" begin
+            l  = Index(4, :Link)
+            r  = Index(6, :Link)
+            si = Index(2, :Site)
+            so = Index(2, :Site)
+            W  = MPOTensor(rand(4, 2, 2, 6), l, so, si, r)
+            Q, R = qr(W; direction=LeftOrthogonal)
+
+            @test Q isa MPOTensor
+            @test R isa DenseTensor
+
+            # index preservation
+            @test Q.left    == l
+            @test Q.site_in == si
+            @test Q.site_out == so
+            @test R.inds[2] == r
+
+            # left orthogonality: reshape Q as (χl*d_out*d_in, χ), Q'Q = I
+            χl, do_, di, χ = size(Q.storage)
+            Q_mat = reshape(Q.storage, χl * do_ * di, χ)
+            @test isapprox(Q_mat' * Q_mat, I(χ); atol=1e-10)
+        end
+
+        @testset "LeftOrthogonal: reconstruction Q*R = W" begin
+            l  = Index(3, :Link)
+            r  = Index(5, :Link)
+            si = Index(2, :Site)
+            so = Index(2, :Site)
+            W  = MPOTensor(rand(3, 2, 2, 5), l, so, si, r)
+            Q, R = qr(W; direction=LeftOrthogonal)
+
+            QR = contract(to_dense(Q), R)
+            @test Set(inds(QR)) == Set(inds(W))
+            @test isapprox(QR.storage, reshape(W.storage, 3*2*2, 5) |>
+                x -> reshape(x, 3, 2, 2, 5); atol=1e-10)
+        end
+
+        @testset "RightOrthogonal: Q is right-orthogonal MPOTensor, L is DenseTensor" begin
+            l  = Index(6, :Link)
+            r  = Index(4, :Link)
+            si = Index(2, :Site)
+            so = Index(2, :Site)
+            W  = MPOTensor(rand(6, 2, 2, 4), l, so, si, r)
+            L, Q = qr(W; direction=RightOrthogonal)
+
+            @test Q isa MPOTensor
+            @test L isa DenseTensor
+
+            # index preservation
+            @test Q.right    == r
+            @test Q.site_in  == si
+            @test Q.site_out == so
+            @test L.inds[1]  == l
+
+            # right orthogonality: reshape Q as (χ, d_out*d_in*χr), QQ' = I
+            χ, do_, di, χr = size(Q.storage)
+            Q_mat = reshape(Q.storage, χ, do_ * di * χr)
+            @test isapprox(Q_mat * Q_mat', I(χ); atol=1e-10)
+        end
+
+        @testset "RightOrthogonal: reconstruction L*Q = W" begin
+            l  = Index(5, :Link)
+            r  = Index(3, :Link)
+            si = Index(2, :Site)
+            so = Index(2, :Site)
+            W  = MPOTensor(rand(5, 2, 2, 3), l, so, si, r)
+            L, Q = qr(W; direction=RightOrthogonal)
+
+            LQ = contract(L, to_dense(Q))
+            @test Set(inds(LQ)) == Set(inds(W))
+            @test isapprox(LQ.storage, reshape(W.storage, 5, 2*2*3) |>
+                x -> reshape(x, 5, 2, 2, 3); atol=1e-10)
+        end
+
+        @testset "LeftOrthogonal: thin QR (χ = min(χl*d_out*d_in, χr))" begin
+            l  = Index(2, :Link)
+            r  = Index(8, :Link)
+            si = Index(2, :Site)
+            so = Index(2, :Site)
+            W  = MPOTensor(rand(2, 2, 2, 8), l, so, si, r)
+            Q, R = qr(W; direction=LeftOrthogonal)
+
+            # thin: bond dim = min(2*2*2, 8) = 8
+            χl, do_, di, χ = size(Q.storage)
+            @test χ == min(χl * do_ * di, 8)
+        end
+
+        @testset "RightOrthogonal: thin LQ (χ = min(χl, d_out*d_in*χr))" begin
+            l  = Index(8, :Link)
+            r  = Index(2, :Link)
+            si = Index(2, :Site)
+            so = Index(2, :Site)
+            W  = MPOTensor(rand(8, 2, 2, 2), l, so, si, r)
+            L, Q = qr(W; direction=RightOrthogonal)
+
+            χ, do_, di, χr = size(Q.storage)
+            @test χ == min(8, do_ * di * χr)
+        end
+
+        @testset "bond index shared between Q and R" begin
+            l  = Index(3, :Link)
+            r  = Index(4, :Link)
+            si = Index(2, :Site)
+            so = Index(2, :Site)
+            W  = MPOTensor(rand(3, 2, 2, 4), l, so, si, r)
+
+            Q, R = qr(W; direction=LeftOrthogonal)
+            @test Q.right == R.inds[1]
+
+            L, Q2 = qr(W; direction=RightOrthogonal)
+            @test L.inds[2] == Q2.left
+        end
+    end
 end
