@@ -143,36 +143,16 @@ function random_mps(sites::Vector{<:Index}, linkdim::Int)
     return random_mps(Float64, sites, linkdim)
 end
 
-function _needs_truncation(t::MPSTensor, maxdim, cutoff, direction::SVDDirection)
-    isnothing(maxdim) && isnothing(cutoff) && return false
-    !isnothing(cutoff) && return true
-    χl, d, χr = size(t.storage)
-    actual_dim = direction == LeftOrthogonal ? min(χl * d, χr) : min(χl, d * χr)
-    return maxdim < actual_dim
-end
-
 function _shift_center_right!(mps::MPS, i::Int; maxdim=nothing, cutoff=nothing)
-    if _needs_truncation(mps.tensors[i], maxdim, cutoff, LeftOrthogonal)
-        U, S, V, _ = svd(mps.tensors[i]; direction=LeftOrthogonal, maxdim, cutoff)
-        mps.tensors[i] = U
-        mps.tensors[i+1] = _to_mpstensor(S * V * mps.tensors[i+1])
-    else
-        Q, R = qr(mps.tensors[i]; direction=LeftOrthogonal)
-        mps.tensors[i] = Q
-        mps.tensors[i+1] = _to_mpstensor(R * mps.tensors[i+1])
-    end
+    Q, R = factorize(mps.tensors[i], LeftOrthogonal; maxdim, cutoff)
+    mps.tensors[i]   = Q
+    mps.tensors[i+1] = _to_mpstensor(R * mps.tensors[i+1])
 end
 
 function _shift_center_left!(mps::MPS, i::Int; maxdim=nothing, cutoff=nothing)
-    if _needs_truncation(mps.tensors[i], maxdim, cutoff, RightOrthogonal)
-        U, S, V, _ = svd(mps.tensors[i]; direction=RightOrthogonal, maxdim, cutoff)
-        mps.tensors[i] = V
-        mps.tensors[i-1] = _to_mpstensor(mps.tensors[i-1] * U * S)
-    else
-        L, Q = qr(mps.tensors[i]; direction=RightOrthogonal)
-        mps.tensors[i] = Q
-        mps.tensors[i-1] = _to_mpstensor(mps.tensors[i-1] * L)
-    end
+    L, Q = factorize(mps.tensors[i], RightOrthogonal; maxdim, cutoff)
+    mps.tensors[i]   = Q
+    mps.tensors[i-1] = _to_mpstensor(mps.tensors[i-1] * L)
 end
 
 """

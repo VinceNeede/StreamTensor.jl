@@ -245,3 +245,34 @@ function LinearAlgebra.qr(A::MPSTensor{T};
         return L_tensor, Q_tensor
     end
 end
+
+function _needs_truncation(t::MPSTensor, maxdim, cutoff, direction::SVDDirection)
+    isnothing(maxdim) && isnothing(cutoff) && return false
+    !isnothing(cutoff) && return true
+    χl, d, χr = size(t.storage)
+    actual_dim = direction == LeftOrthogonal ? min(χl * d, χr) : min(χl, d * χr)
+    return maxdim < actual_dim
+end
+
+"""
+    factorize(t::MPSTensor, direction; maxdim, cutoff) -> (left_factor, right_factor)
+
+Factorize `t` into two tensors. Uses SVD with truncation if `maxdim` or
+`cutoff` would actually reduce the bond dimension, QR otherwise.
+
+- `LeftOrthogonal`: returns `(Q::MPSTensor, R::DenseTensor)` where `Q` is
+  left-orthogonal and `R` absorbs the singular values (if SVD) or is upper
+  triangular (if QR).
+- `RightOrthogonal`: returns `(L::DenseTensor, Q::MPSTensor)` where `Q` is
+  right-orthogonal and `L` absorbs the singular values (if SVD) or is lower
+  triangular (if QR).
+"""
+function factorize(t::MPSTensor, direction::SVDDirection;
+                   maxdim=nothing, cutoff=nothing)
+    if _needs_truncation(t, maxdim, cutoff, direction)
+        U, S, V, _ = svd(t; direction, maxdim, cutoff)
+        return direction == LeftOrthogonal ? (U, S * V) : (U * S, V)
+    else
+        return qr(t; direction)
+    end
+end
