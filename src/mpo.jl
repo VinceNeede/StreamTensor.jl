@@ -91,3 +91,33 @@ given `sites`, returning a `Vector` of real scalars.
 function expect(ψ::MPS{T}, O::AbstractMatrix; sites::AbstractVector{Int} = 1:length(ψ)) where {T}
     return [expect(ψ, O, i) for i in sites]
 end
+
+"""
+    inner(ψ::MPS, H::MPO, φ::MPS) -> Number
+
+Compute the matrix element `⟨ψ|H|φ⟩` by contracting the bra, MPO, and ket
+left-to-right in a single sweep.  `ψ` is automatically conjugated.
+
+It is safe to call `inner(ψ, H, ψ)` (bra === ket): link indices of `ψ` are
+refreshed via `sim_linkinds` before contraction to avoid index conflicts.
+
+Both MPS must have the same length as the MPO, and their physical indices must
+match `siteinds(H)`.
+"""
+function inner(ψ::MPS, H::MPO, φ::MPS)
+    L = length(H)
+    @assert length(ψ) == L && length(φ) == L "MPS/MPO length mismatch"
+
+    ψ_sim = sim_linkinds(ψ')
+
+    E = DenseTensor(
+        (ψ_sim[1].left, H[1].left, φ[1].left),
+        fill(one(eltype(ψ_sim[1].storage)), 1, 1, 1)
+    )
+
+    for i in 1:L
+        E = E * ψ_sim[i] * H[i] * φ[i]
+    end
+
+    return E.storage[]
+end
