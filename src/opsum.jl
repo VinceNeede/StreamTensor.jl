@@ -176,7 +176,7 @@ function MPO(opsum::OpSum, sites::Vector{<:Index})
 
     tensors = map(1:N) do n
         T = _fsm_site_tensor(opsum, n, sites[n], states[n], states[n+1], cache, C)
-        MPOTensor(T, links[n], sites[n], sites[n]', links[n+1])
+        MPOTensor(T, links[n], sites[n]', sites[n], links[n+1])
     end
     return MPO(tensors)
 end

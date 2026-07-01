@@ -49,7 +49,7 @@ function _drop_trivial_left_link(t::MPSTensor)
 end
 
 function _drop_trivial_left_link(t::MPOTensor)
-    return DenseTensor((t.site_in, t.site_out, t.right), dropdims(t.storage, dims=1))
+    return DenseTensor((t.site_out, t.site_in, t.right), dropdims(t.storage, dims=1))
 end
 
 function _drop_trivial_right_link(t::MPSTensor)
@@ -57,7 +57,7 @@ function _drop_trivial_right_link(t::MPSTensor)
 end
 
 function _drop_trivial_right_link(t::MPOTensor)
-    return DenseTensor((t.left, t.site_in, t.site_out), dropdims(t.storage, dims=4))
+    return DenseTensor((t.left, t.site_out, t.site_in), dropdims(t.storage, dims=4))
 end
 
 function _extend_env(::Nothing, ψi::MPSTensor, Hi::MPOTensor, edge::Symbol)

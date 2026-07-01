@@ -165,39 +165,39 @@ end
 
 SVD of a single MPO tensor.  Mirrors the `MPSTensor` convention:
 
-- `LeftOrthogonal`: splits `(χl·d_in·d_out | χr)`.
-- `RightOrthogonal`: splits `(χl | d_in·d_out·χr)`.
+- `LeftOrthogonal`: splits `(χl·d_out·d_in | χr)`.
+- `RightOrthogonal`: splits `(χl | d_out·d_in·χr)`.
 
 Both directions require no storage permutation because the canonical axis order
-`(χl, d_in, d_out, χr)` already groups left and right legs contiguously.
+`(χl, d_out, d_in, χr)` already groups left and right legs contiguously.
 """
 function LinearAlgebra.svd(A::MPOTensor{T};
              maxdim::Union{Int, Nothing}=nothing,
              cutoff::Union{Real, Nothing}=nothing,
              direction::SVDDirection=LeftOrthogonal) where {T}
 
-    χl, di, do_, χr = size(A.storage)
+    χl, do_, di, χr = size(A.storage)
 
     if direction == LeftOrthogonal
-        # split (χl * di * do_ | χr) — free reshape, no permutation
-        U_mat, s, Vt_mat = _mat_svd(reshape(A.storage, χl * di * do_, χr))
+        # split (χl * do_ * di | χr) — free reshape, no permutation
+        U_mat, s, Vt_mat = _mat_svd(reshape(A.storage, χl * do_ * di, χr))
         U_mat, s, Vt_mat, truncerr = _truncate(s, U_mat, Vt_mat; maxdim, cutoff)
         χ = length(s)
         bond_u, bond_v = _new_bonds(χ)
 
-        U = MPOTensor(reshape(U_mat, χl, di, do_, χ), A.left, A.site_in, A.site_out, bond_u)
+        U = MPOTensor(reshape(U_mat, χl, do_, di, χ), A.left, A.site_out, A.site_in, bond_u)
         S = DiagTensor((bond_u, bond_v), s)
         V = DenseTensor((bond_v, A.right), reshape(Vt_mat, χ, χr))
     else
-        # split (χl | di * do_ * χr) — free reshape, no permutation
-        U_mat, s, Vt_mat = _mat_svd(reshape(A.storage, χl, di * do_ * χr))
+        # split (χl | do_ * di * χr) — free reshape, no permutation
+        U_mat, s, Vt_mat = _mat_svd(reshape(A.storage, χl, do_ * di * χr))
         U_mat, s, Vt_mat, truncerr = _truncate(s, U_mat, Vt_mat; maxdim, cutoff)
         χ = length(s)
         bond_u, bond_v = _new_bonds(χ)
 
         U = DenseTensor((A.left, bond_u), reshape(U_mat, χl, χ))
         S = DiagTensor((bond_u, bond_v), s)
-        V = MPOTensor(reshape(Vt_mat, χ, di, do_, χr), bond_v, A.site_in, A.site_out, A.right)
+        V = MPOTensor(reshape(Vt_mat, χ, do_, di, χr), bond_v, A.site_out, A.site_in, A.right)
     end
 
     return U, S, V, truncerr

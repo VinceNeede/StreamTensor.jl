@@ -44,7 +44,7 @@ function expect(ψ::MPS{T}, O::AbstractMatrix, i::Int) where {T}
     @assert size(O, 2) == s.dim "Operator dimension $(size(O,2)) doesn't match site dimension $(s.dim)"
     l = Index(1, :Link)
     r = Index(1, :Link)
-    O_tensor = MPOTensor(reshape(O, 1, s.dim, s.dim, 1), l, s, s_out, r)
+    O_tensor = MPOTensor(reshape(O, 1, s.dim, s.dim, 1), l, s_out, s, r)
     return expect(ψ, O_tensor; i_site=i)
 end
 

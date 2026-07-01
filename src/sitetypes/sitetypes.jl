@@ -78,7 +78,7 @@ function op(
 )
     O_mat = _dispatch_op(s, opname; kwargs...)
     s_out = s'
-    return MPOTensor(reshape(O_mat, 1, s.dim, s.dim, 1), left_link, s, s_out, right_link)
+    return MPOTensor(reshape(O_mat, 1, s.dim, s.dim, 1), left_link, s_out, s, right_link)
 end
 
 function state(

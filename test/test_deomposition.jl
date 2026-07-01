@@ -149,7 +149,7 @@ import LinearAlgebra: I, diagm
             r  = Index(4, :Link)
             si = Index(2, :Site)
             so = Index(2, :Site)
-            W  = MPOTensor(rand(4, 2, 2, 4), l, si, so, r)
+            W  = MPOTensor(rand(4, 2, 2, 4), l, so, si, r)
             U, S, V = svd(W; direction=LeftOrthogonal)
 
             US  = contract(U, S)
@@ -163,7 +163,7 @@ import LinearAlgebra: I, diagm
             r  = Index(4, :Link)
             si = Index(2, :Site)
             so = Index(2, :Site)
-            W  = MPOTensor(rand(4, 2, 2, 4), l, si, so, r)
+            W  = MPOTensor(rand(4, 2, 2, 4), l, so, si, r)
             U, S, V = svd(W; direction=RightOrthogonal)
 
             US  = contract(U, S)
@@ -177,7 +177,7 @@ import LinearAlgebra: I, diagm
             r  = Index(6, :Link)
             si = Index(2, :Site)
             so = Index(2, :Site)
-            W  = MPOTensor(rand(4, 2, 2, 6), l, si, so, r)
+            W  = MPOTensor(rand(4, 2, 2, 6), l, so, si, r)
             U, S, V = svd(W; direction=LeftOrthogonal)
 
             @test U isa MPOTensor
@@ -185,8 +185,8 @@ import LinearAlgebra: I, diagm
             @test U.site_in == si
             @test U.site_out == so
 
-            χl, di, do_, χ = size(U.storage)
-            U_mat = reshape(U.storage, χl * di * do_, χ)
+            χl, do_, di, χ = size(U.storage)
+            U_mat = reshape(U.storage, χl * do_ * di, χ)
             @test U_mat' * U_mat ≈ I(χ)
         end
 
@@ -195,7 +195,7 @@ import LinearAlgebra: I, diagm
             r  = Index(4, :Link)
             si = Index(2, :Site)
             so = Index(2, :Site)
-            W  = MPOTensor(rand(6, 2, 2, 4), l, si, so, r)
+            W  = MPOTensor(rand(6, 2, 2, 4), l, so, si, r)
             U, S, V = svd(W; direction=RightOrthogonal)
 
             @test V isa MPOTensor
@@ -203,8 +203,8 @@ import LinearAlgebra: I, diagm
             @test V.site_in == si
             @test V.site_out == so
 
-            χ, di, do_, χr = size(V.storage)
-            V_mat = reshape(V.storage, χ, di * do_ * χr)
+            χ, do_, di, χr = size(V.storage)
+            V_mat = reshape(V.storage, χ, do_ * di * χr)
             @test V_mat * V_mat' ≈ I(χ)
         end
     end

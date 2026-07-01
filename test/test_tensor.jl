@@ -42,8 +42,9 @@
         r  = Index(4, :Link)
         si = Index(2, :Site)
         so = Index(2, :Site)
-        W = MPOTensor(rand(4, 2, 2, 4), l, si, so, r)
-        @test siteinds(W) == (si, so)
+        W = MPOTensor(rand(4, 2, 2, 4), l, so, si, r)
+        @test inds(W) == (l, so, si, r)
+        @test siteinds(W) == (so, si)
         @test linkinds(W) == (l, r)
         @test size(W) == (4, 2, 2, 4)
     end

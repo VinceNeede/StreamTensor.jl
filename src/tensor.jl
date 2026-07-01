@@ -66,18 +66,18 @@ end
 """
     MPOTensor{T, A <: AbstractArray{T,4}}
 Concrete type of a tensor with 4 ordered legs. The canonical order is:
-    left link - site_in - site_out - right link
+    left link - site_out - site_in - right link
 """
 struct MPOTensor{T, A <: AbstractArray{T,4}} <: AbstractTensor{T, 4}
-    storage  :: A                  # (χ_left, d_in, d_out, χ_right)
+    storage  :: A                  # (χ_left, d_out, d_in, χ_right)
     left     :: Index
-    site_in  :: Index
     site_out :: Index
+    site_in  :: Index
     right    :: Index
-    function MPOTensor(storage::A, left::Index, site_in::Index, site_out::Index, right::Index) where {T, A <: AbstractArray{T,4}}
-        @assert allunique((left, site_in, site_out, right)) "MPOTensor has repeated indices: $((left, site_in, site_out, right))"
-        @assert size(storage) == (left.dim, site_in.dim, site_out.dim, right.dim) "Storage shape $(size(storage)) doesn't match index dims $((left.dim, right.dim, site_in.dim, site_out.dim))"
-        new{T, A}(storage, left, site_in, site_out, right)
+    function MPOTensor(storage::A, left::Index, site_out::Index, site_in::Index, right::Index) where {T, A <: AbstractArray{T,4}}
+        @assert allunique((left, site_out, site_in, right)) "MPOTensor has repeated indices: $((left, site_out, site_in, right))"
+        @assert size(storage) == (left.dim, site_out.dim, site_in.dim, right.dim) "Storage shape $(size(storage)) doesn't match index dims $((left.dim, site_out.dim, site_in.dim, right.dim))"
+        new{T, A}(storage, left, site_out, site_in, right)
     end
 end
 
@@ -87,7 +87,7 @@ Return the indices of `t`.
 """
 inds(t::AbstractTensor) = t.inds
 inds(t::MPSTensor) = (t.left, t.site, t.right)
-inds(t::MPOTensor) = (t.left, t.site_in, t.site_out, t.right)
+inds(t::MPOTensor) = (t.left, t.site_out, t.site_in, t.right)
 """
     siteind(t::MPSTensor) -> Index
 Return the site index of `t`.
@@ -97,7 +97,7 @@ siteind(t::MPSTensor) = t.site
     siteinds(t::MPSTensor) -> NTuple{2, Index}
 Return the site indices of `t`.
 """
-siteinds(t::MPOTensor) = (t.site_in, t.site_out)
+siteinds(t::MPOTensor) = (t.site_out, t.site_in)
 """
     linkinds(t::MPSTensor) -> NTuple{2, Index}
 Return the link indices of `t`.
@@ -166,7 +166,7 @@ function Base.conj(t::MPSTensor{T}) where {T}
 end
 
 function Base.conj(t::MPOTensor{T}) where {T}
-    return MPOTensor(conj(t.storage), t.left, t.site_in, t.site_out, t.right)
+    return MPOTensor(conj(t.storage), t.left, t.site_out, t.site_in, t.right)
 end
 
 """
@@ -175,7 +175,7 @@ Return a tensor with same storage as `t` but with the primed indices. The storag
 is a view of the original tensor.
 """
 prime(t::MPSTensor) = MPSTensor(t.storage, t.left', t.site', t.right')
-prime(t::MPOTensor) = MPOTensor(t.storage, t.left', t.site_in', t.site_out', t.right')
+prime(t::MPOTensor) = MPOTensor(t.storage, t.left', t.site_out', t.site_in', t.right')
 prime(t::DenseTensor) = DenseTensor(prime.(inds(t)), t.storage)
 prime(t::DiagTensor) = DiagTensor(prime.(inds(t)), t.storage)
 prime(t::AbstractTensor) = prime(to_dense(t))
