@@ -246,28 +246,69 @@ function LinearAlgebra.qr(A::MPSTensor{T};
     end
 end
 
-function _needs_truncation(t::MPSTensor, maxdim, cutoff, direction::SVDDirection)
+function LinearAlgebra.qr(A::MPOTensor{T};
+             direction::SVDDirection=LeftOrthogonal) where {T}
+    χl, d_out, d_in, χr = size(A.storage)
+
+    if direction == LeftOrthogonal
+        A_mat = reshape(A.storage, χl * d_out * d_in, χr)
+        χ     = min(χl * d_out * d_in, χr)
+        F     = qr(A_mat)
+        R     = F.R[1:χ, :]
+        Q     = Matrix(F.Q[:, 1:χ])
+        bond  = Index(χ, :Link)
+        Q_tensor = MPOTensor(reshape(Q, χl, d_out, d_in, χ), A.left, A.site_out, A.site_in, bond)
+        R_tensor = DenseTensor((bond, A.right), R)
+        return Q_tensor, R_tensor
+    else
+        A_mat = reshape(A.storage, χl, d_out * d_in * χr)
+        χ     = min(χl, d_out * d_in * χr)
+        bond  = Index(χ, :Link)
+        F     = qr(A_mat')
+        L     = Matrix(F.R[1:χ, :]')
+        Q     = Matrix(F.Q[:, 1:χ]')
+        L_tensor = DenseTensor((A.left, bond), L)
+        Q_tensor = MPOTensor(reshape(Q, χ, d_out, d_in, χr), bond, A.site_out, A.site_in, A.right)
+        return L_tensor, Q_tensor
+    end
+end
+
+function _needs_truncation(maxdim, cutoff, left_dim::Int, right_dim::Int)
     isnothing(maxdim) && isnothing(cutoff) && return false
     !isnothing(cutoff) && return true
+    return maxdim < min(left_dim, right_dim)
+end
+
+function _needs_truncation(t::MPSTensor, maxdim, cutoff, direction::SVDDirection)
     χl, d, χr = size(t.storage)
-    actual_dim = direction == LeftOrthogonal ? min(χl * d, χr) : min(χl, d * χr)
-    return maxdim < actual_dim
+    left_dim  = direction == LeftOrthogonal ? χl * d : χl
+    right_dim = direction == LeftOrthogonal ? χr     : d * χr
+    return _needs_truncation(maxdim, cutoff, left_dim, right_dim)
+end
+
+function _needs_truncation(t::MPOTensor, maxdim, cutoff, direction::SVDDirection)
+    χl, d_out, d_in, χr = size(t.storage)
+    left_dim  = direction == LeftOrthogonal ? χl * d_out * d_in : χl
+    right_dim = direction == LeftOrthogonal ? χr                 : d_out * d_in * χr
+    return _needs_truncation(maxdim, cutoff, left_dim, right_dim)
 end
 
 """
-    factorize(t::MPSTensor, direction; maxdim, cutoff) -> (left_factor, right_factor)
+    factorize(t::Union{MPSTensor, MPOTensor}, direction; maxdim, cutoff) -> (left_factor, right_factor)
 
 Factorize `t` into two tensors. Uses SVD with truncation if `maxdim` or
 `cutoff` would actually reduce the bond dimension, QR otherwise.
 
-- `LeftOrthogonal`: returns `(Q::MPSTensor, R::DenseTensor)` where `Q` is
-  left-orthogonal and `R` absorbs the singular values (if SVD) or is upper
-  triangular (if QR).
-- `RightOrthogonal`: returns `(L::DenseTensor, Q::MPSTensor)` where `Q` is
-  right-orthogonal and `L` absorbs the singular values (if SVD) or is lower
-  triangular (if QR).
+- `LeftOrthogonal`: returns `(Q, R)` where `Q` is a left-orthogonal
+  `MPSTensor` or `MPOTensor` (matching the input type) and `R` is a
+  `DenseTensor` absorbing the singular values (if SVD) or upper-triangular
+  factor (if QR).
+- `RightOrthogonal`: returns `(L, Q)` where `Q` is a right-orthogonal
+  `MPSTensor` or `MPOTensor` (matching the input type) and `L` is a
+  `DenseTensor` absorbing the singular values (if SVD) or lower-triangular
+  factor (if QR).
 """
-function factorize(t::MPSTensor, direction::SVDDirection;
+function factorize(t::Union{MPSTensor, MPOTensor}, direction::SVDDirection;
                    maxdim=nothing, cutoff=nothing)
     if _needs_truncation(t, maxdim, cutoff, direction)
         U, S, V, _ = svd(t; direction, maxdim, cutoff)

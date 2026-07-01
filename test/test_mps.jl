@@ -423,3 +423,155 @@
 
     end
 end
+
+@testset "MPO orthogonalize!" begin
+
+    function tfim_mpo(sites; J=1.0, h=1.0)
+        L = length(sites)
+        os = OpSum()
+        for i in 1:L-1
+            os += (-J, "Sz", i, "Sz", i+1)
+        end
+        for i in 1:L
+            os += (-h, "Sx", i)
+        end
+        return MPO(os, sites)
+    end
+
+    function is_left_ortho(H::MPO, i::Int; atol=1e-10)
+        χl, d_out, d_in, χr = size(H[i].storage)
+        U = reshape(H[i].storage, χl * d_out * d_in, χr)
+        return isapprox(U' * U, I(χr); atol=atol)
+    end
+
+    function is_right_ortho(H::MPO, i::Int; atol=1e-10)
+        χl, d_out, d_in, χr = size(H[i].storage)
+        V = reshape(H[i].storage, χl, d_out * d_in * χr)
+        return isapprox(V * V', I(χl); atol=atol)
+    end
+    
+    @testset "orthogonalize! center=1: all sites right-orthogonal except first" begin
+        sites = siteinds(:SpinHalf, 5)
+        H = tfim_mpo(sites)
+        orthogonalize!(H, 1)
+
+        @test H.llim == 0
+        @test H.rlim == 2
+
+        for i in 2:5
+            @test is_right_ortho(H, i)
+        end
+    end
+
+    @testset "orthogonalize! center=L: all sites left-orthogonal except last" begin
+        sites = siteinds(:SpinHalf, 5)
+        H = tfim_mpo(sites)
+        orthogonalize!(H, 5)
+
+        @test H.llim == 4
+        @test H.rlim == 6
+
+        for i in 1:4
+            @test is_left_ortho(H, i)
+        end
+    end
+
+    @testset "orthogonalize! center=3: left/right orthogonality on both sides" begin
+        sites = siteinds(:SpinHalf, 5)
+        H = tfim_mpo(sites)
+        orthogonalize!(H, 3)
+
+        @test H.llim == 2
+        @test H.rlim == 4
+
+        for i in 1:2
+            @test is_left_ortho(H, i)
+        end
+        for i in 4:5
+            @test is_right_ortho(H, i)
+        end
+    end
+
+    @testset "orthogonalize! preserves MPO action: inner(ψ,H,ψ) unchanged" begin
+        L = 5
+        sites = siteinds(:SpinHalf, L)
+        H     = tfim_mpo(sites)
+        ψ     = random_mps(Float64, sites, 4)
+
+        E_before = inner(ψ, H, ψ)
+        orthogonalize!(H, 3)
+        E_after = inner(ψ, H, ψ)
+
+        @test E_before ≈ E_after atol=1e-10
+    end
+
+    @testset "orthogonalize! center=1 then center=5: incremental sweep" begin
+        sites = siteinds(:SpinHalf, 5)
+        H = tfim_mpo(sites)
+
+        orthogonalize!(H, 1)
+        orthogonalize!(H, 5)
+
+        @test H.llim == 4
+        @test H.rlim == 6
+
+        for i in 1:4
+            @test is_left_ortho(H, i)
+        end
+    end
+
+    @testset "orthogonalize! L=4 center=2: bond connectivity preserved" begin
+        sites = siteinds(:SpinHalf, 4)
+        H = tfim_mpo(sites)
+        orthogonalize!(H, 2)
+
+        for i in 1:length(H)-1
+            @test H[i].right == H[i+1].left
+        end
+    end
+
+    @testset "orthogonalize (non-mutating): original unchanged" begin
+        sites = siteinds(:SpinHalf, 5)
+        H     = tfim_mpo(sites)
+        llim_before = H.llim
+        rlim_before = H.rlim
+
+        H2 = orthogonalize(H, 3)
+
+        @test H.llim == llim_before
+        @test H.rlim == rlim_before
+        @test H2.llim == 2
+        @test H2.rlim == 4
+
+        # H2 is orthogonal at center 3
+        for i in 1:2
+            @test is_left_ortho(H2, i)
+        end
+        for i in 4:5
+            @test is_right_ortho(H2, i)
+        end
+    end
+
+    @testset "orthogonalize! Heisenberg L=4" begin
+        sites = siteinds(:SpinHalf, 4)
+        os = OpSum()
+        for i in 1:3
+            os += (1.0, "Sz", i, "Sz", i+1)
+            os += (0.5, "S+", i, "S-", i+1)
+            os += (0.5, "S-", i, "S+", i+1)
+        end
+        H = MPO(os, sites)
+        ψ = random_mps(Float64, sites, 4)
+
+        E_before = inner(ψ, H, ψ)
+        orthogonalize!(H, 2)
+        E_after = inner(ψ, H, ψ)
+
+        @test E_before ≈ E_after atol=1e-10
+        @test is_left_ortho(H, 1)
+        for i in 3:4
+            @test is_right_ortho(H, i)
+        end
+    end
+
+end

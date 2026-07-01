@@ -104,3 +104,71 @@ linkinds(tt::AbstractTensorTrain) = [linkind(tt, i) for i in 1:length(tt)]
 Return the maximum bond dimension across all internal bonds of `tt`.
 """
 maxlinkdim(tt::AbstractTensorTrain) = maximum(dims(linkinds(tt)))
+
+
+function _shift_center_right!(tt::AbstractTensorTrain, i::Int;
+                               maxdim=nothing, cutoff=nothing)
+    Q, R = factorize(tt[i], LeftOrthogonal; maxdim, cutoff)
+    tt[i]   = Q
+    tt[i+1] = _to_traintensor(R * tt[i+1])
+end
+
+function _shift_center_left!(tt::AbstractTensorTrain, i::Int;
+                              maxdim=nothing, cutoff=nothing)
+    L, Q = factorize(tt[i], RightOrthogonal; maxdim, cutoff)
+    tt[i]   = Q
+    tt[i-1] = _to_traintensor(tt[i-1] * L)
+end
+
+"""
+    orthogonalize!(tt::AbstractTensorTrain, center::Int) -> AbstractTensorTrain
+
+In-place: sweep left and right to bring the orthogonality center to site
+`center` using QR decompositions. Updates `tt.llim` and `tt.rlim`.
+Works for both MPS and MPO.
+"""
+function orthogonalize!(tt::AbstractTensorTrain, center::Int)
+    L = length(tt)
+    @assert 1 <= center <= L "Center $center out of bounds"
+
+    for i in tt.llim+1 : center-1
+        _shift_center_right!(tt, i)
+    end
+    for i in tt.rlim-1 : -1 : center+1
+        _shift_center_left!(tt, i)
+    end
+
+    setleftlim!(tt, center - 1)
+    setrightlim!(tt, center + 1)
+    return tt
+end
+
+"""
+    compress!(tt::AbstractTensorTrain, center::Int; maxdim, cutoff) -> AbstractTensorTrain
+
+In-place: sweep over all sites with SVD truncation to bring the orthogonality
+center to `center`. Unlike `orthogonalize!`, always processes all sites
+regardless of current `llim`/`rlim`. Works for both MPS and MPO.
+"""
+function compress!(tt::AbstractTensorTrain, center::Int;
+                   maxdim=nothing, cutoff=nothing)
+    L = length(tt)
+    @assert 1 <= center <= L "Center $center out of bounds"
+
+    for i in 1:center-1
+        _shift_center_right!(tt, i; maxdim, cutoff)
+    end
+    for i in L:-1:center+1
+        _shift_center_left!(tt, i; maxdim, cutoff)
+    end
+
+    setleftlim!(tt, center - 1)
+    setrightlim!(tt, center + 1)
+    return tt
+end
+
+orthogonalize(tt::AbstractTensorTrain, center::Int) =
+    orthogonalize!(copy(tt), center)
+
+compress(tt::AbstractTensorTrain, center::Int; kwargs...) =
+    compress!(copy(tt), center; kwargs...)

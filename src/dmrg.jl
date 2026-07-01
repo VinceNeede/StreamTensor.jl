@@ -175,7 +175,7 @@ function _update_local_tensors!(P::ProjMPO{T,1}, ψ::MPS, ϕ::MPSTensor, pos::In
         ψ.tensors[pos] = MPSTensor(reshape(U_mat, χl, d, χ), ϕ.left, ϕ.site, bond)
         R = (Diagonal(s) * Vt_mat)[:, 1:χr]      # (χ, χr(1+wr)) -> (χ, χr); χ may exceed χr
         R = DenseTensor((bond, ϕ.right), R)
-        ψ.tensors[pos+1] = _to_mpstensor(R * ψ[pos+1])
+        ψ.tensors[pos+1] = _to_traintensor(R * ψ[pos+1])
         
         ψ.llim, ψ.rlim = pos, pos + 2
     else
@@ -196,7 +196,7 @@ function _update_local_tensors!(P::ProjMPO{T,1}, ψ::MPS, ϕ::MPSTensor, pos::In
         bond = Index(χ, :Link)
         L = (U_mat * Diagonal(s))[1:χl, :]       # (χl(1+wl), χ) -> (χl, χ); χ may exceed χl
         L = DenseTensor((ϕ.left, bond), L)
-        ψ.tensors[pos-1] = _to_mpstensor(ψ[pos-1] * L)
+        ψ.tensors[pos-1] = _to_traintensor(ψ[pos-1] * L)
         ψ.tensors[pos] = MPSTensor(reshape(Vt_mat, χ, d, χr), bond, ϕ.site, ϕ.right)
         ψ.llim, ψ.rlim = pos - 2, pos
     end
@@ -208,12 +208,12 @@ function _update_local_tensors!(::ProjMPO{T,2}, ψ::MPS, ϕ::DenseTensor, pos::I
     left_inds = (ψ[pos].left, ψ[pos].site)
     U, S, V, truncerr = svd(ϕ, left_inds; maxdim, cutoff)
     if direction == LeftOrthogonal
-        ψ.tensors[pos]   = _to_mpstensor(U)
-        ψ.tensors[pos+1] = _to_mpstensor(S * V)
+        ψ.tensors[pos]   = _to_traintensor(U)
+        ψ.tensors[pos+1] = _to_traintensor(S * V)
         ψ.llim, ψ.rlim = pos, pos + 2
     else
-        ψ.tensors[pos]   = _to_mpstensor(U * S)
-        ψ.tensors[pos+1] = _to_mpstensor(V)
+        ψ.tensors[pos]   = _to_traintensor(U * S)
+        ψ.tensors[pos+1] = _to_traintensor(V)
         ψ.llim, ψ.rlim = pos - 1, pos + 1
     end
     return truncerr

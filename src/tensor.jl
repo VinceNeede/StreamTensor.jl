@@ -138,15 +138,14 @@ function to_dense(D::DiagTensor{T, N}) where {T, N}
     return DenseTensor(inds(D), storage)
 end
 
-"""
-    _to_mpstensor(t::DenseTensor{T, 3}) -> MPSTensor
-
-Internal helper: reinterpret a rank-3 `DenseTensor` whose indices are
-`(left, site, right)` as an `MPSTensor` without copying storage.
-"""
-function _to_mpstensor(t::DenseTensor{T, 3}) where {T}
+function _to_traintensor(t::DenseTensor{T, 3}) where {T}
     l, s, r = inds(t)
     MPSTensor(t.storage, l, s, r)
+end
+
+function _to_traintensor(t::DenseTensor{T, 4}) where {T}
+    l, s_out, s_in, r = inds(t)
+    MPOTensor(t.storage, l, s_out, s_in, r)
 end
 
 """
