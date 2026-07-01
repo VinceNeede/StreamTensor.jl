@@ -121,3 +121,93 @@ function inner(ψ::MPS, H::MPO, φ::MPS)
 
     return E.storage[]
 end
+
+"""
+    apply!(H::MPO, ψ::MPS, ::Val{:zipup};
+           maxdim=nothing, cutoff=nothing,
+           sweep_maxdim=nothing, sweep_cutoff=nothing) -> MPS
+
+Compute `H|ψ⟩` in-place using the zip-up algorithm, overwriting `ψ`.
+
+The left-to-right pass contracts `H[i] * ψ[i]` site by site, fusing the
+left and right link indices via `Combiner` and factorizing via QR (or SVD
+if `sweep_maxdim`/`sweep_cutoff` are provided). The right-to-left pass
+compresses the result with `compress!` using `maxdim`/`cutoff`.
+
+For best numerical accuracy, `H` should be in left-canonical form
+(`orthogonalize!(H, 1)` called beforehand). A warning is issued if `H`
+is not in canonical form.
+
+Returns `ψ` (now representing `H|ψ⟩`) in left-canonical form
+(orthogonality center at site 1).
+
+# Arguments
+- `maxdim`: maximum bond dimension for the right-to-left compression pass.
+- `cutoff`: singular value cutoff for the right-to-left compression pass.
+- `sweep_maxdim`: maximum bond dimension during the left-to-right pass
+  (default: no truncation, bond dimension grows to `D*χ`).
+- `sweep_cutoff`: singular value cutoff during the left-to-right pass.
+
+# Example
+```julia
+sites = siteinds(:SpinHalf, 10)
+H = MPO(opsum, sites)
+orthogonalize!(H, 1)
+ψ = random_mps(Float64, sites, 8)
+apply!(H, ψ; maxdim=16, cutoff=1e-10)
+```
+"""
+function apply!(H::MPO, ψ::MPS, ::Val{:zipup};
+                maxdim=nothing, cutoff=nothing,
+                sweep_maxdim=nothing, sweep_cutoff=nothing)
+    L = length(H)
+    @assert length(ψ) == L "MPO/MPS length mismatch"
+    if !isortho(H) || orthocenter(H) != 1
+        @warn "apply!(H, ψ, Val(:zipup)): H is not left-canonicalized at site 1. " *
+            "Call orthogonalize!(H, 1) before apply! for best numerical accuracy."
+    end
+    orthogonalize!(ψ, 1)
+    T = promote_type(eltype(H[1].storage), eltype(ψ[1].storage))
+
+    R = DenseTensor(
+        (Index(1, :Link), H[1].left, ψ[1].left),
+        ones(T, 1, 1, 1)
+    )
+
+    for i in 1:L
+        θ = R * H[i] * ψ[i]
+        c_right, _ = combine(H[i].right, ψ[i].right; tags=:Link)
+        θ = noprime(_to_traintensor(θ * c_right))
+        if i == L
+            ψ.tensors[i] = θ
+        else
+            U, R = factorize(θ, LeftOrthogonal; maxdim=sweep_maxdim, cutoff=sweep_cutoff)
+            ψ.tensors[i] = U
+            R = R * dag(c_right)   # → (link_svd, H[i].right, ψ[i].right)
+        end
+    end
+
+    ψ.llim = L - 1
+    ψ.rlim = L + 1
+
+    # ── right-to-left pass: compress ─────────────────────────────────────
+    compress!(ψ, 1; maxdim, cutoff)
+
+    return ψ
+end
+
+"""
+    apply!(H::MPO, ψ::MPS; alg=:zipup, kwargs...) -> MPS
+
+Dispatch to the algorithm selected by `alg`. Currently supported: `:zipup`.
+See [`apply!(H, ψ, Val(:zipup))`](@ref) for keyword arguments.
+"""
+apply!(H::MPO, ψ::MPS; alg=:zipup, kwargs...) = apply!(H, ψ, Val(alg); kwargs...)
+
+"""
+    apply(H::MPO, ψ::MPS; kwargs...) -> MPS
+
+Non-mutating version of [`apply!`](@ref): returns a new MPS representing
+`H|ψ⟩` without modifying `ψ`. See `apply!` for keyword arguments.
+"""
+apply(H::MPO,  ψ::MPS; kwargs...)              = apply!(H, copy(ψ); kwargs...)

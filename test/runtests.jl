@@ -8,4 +8,5 @@ using StreamTensor
     include("test_combiner.jl")
     include("test_deomposition.jl")
     include("test_mps.jl")
+    include("test_apply.jl")
 end

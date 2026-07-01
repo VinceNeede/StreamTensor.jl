@@ -70,7 +70,7 @@ export inner
 # MPO
 # ==================
 export MPO
-export expect
+export expect, apply, apply!
 
 # ==================
 # OpSum

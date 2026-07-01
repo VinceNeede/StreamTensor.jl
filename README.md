@@ -6,8 +6,12 @@ StreamTensor provides an MPS/MPO stack built from scratch, with a finite-state-m
 memory usage.
 
 > **Status:** active development. The current release covers closed-system ground-state
-> search via DMRG (single-site and two-site, including DMRG3S subspace expansion).
-> Planned extensions include GPU-accelerated contraction (windowed device memory,
+> search via DMRG (single-site and two-site, including DMRG3S subspace expansion)
+> and MPO–MPS contraction via the zip-up algorithm (`apply!`/`apply`).
+> Two further contraction algorithms are planned: the naïve contract-then-compress
+> method and Successive Randomized Compression (SRC, Camaño, Epperly & Tropp 2025),
+> which achieves accuracy comparable to contract-then-compress at zip-up speed.
+> Planned extensions also include GPU-accelerated contraction (windowed device memory,
 > without copying the full MPS/MPO to VRAM) and open quantum systems
 > (Lindblad master equation, matrix product density operators).
 
@@ -20,6 +24,11 @@ memory usage.
   `NTuple{N,Index}` fields, no heap allocation on `prime`/`noprime`/`contract` calls.
 - **`OpSum` → `MPO` compiler** — write Hamiltonians in second-quantised notation;
   the finite-state-machine builder produces the exact MPO automatically.
+- **MPO–MPS contraction** — `apply!(H, ψ)` / `apply(H, ψ)` compute `H|ψ⟩` as a
+  compressed MPS using the zip-up algorithm (Stoudenmire & White 2010): a
+  left-to-right sweep contracts and optionally truncates site by site, followed by
+  a right-to-left SVD compression pass. Naïve contract-then-compress and Successive
+  Randomized Compression (SRC) are planned.
 - **DMRG** — single-site (`nsite=1`) with DMRG3S subspace expansion (Hubig et al. 2015)
   and two-site (`nsite=2`), adaptive `eigsolve` tolerance schedule, per-sweep
   `maxdim`/`cutoff`/`noise` schedules.
@@ -121,7 +130,21 @@ E = sweep_data[end].energies[end]
 println("Ground state energy: $E")
 ```
 
-### 3. Measure observables
+### 3. Apply an MPO to an MPS
+
+```julia
+# compute H|ψ⟩ as a compressed MPS (zip-up algorithm)
+orthogonalize!(mpo, 1)          # recommended before apply!
+Hψ = apply(mpo, ψ; maxdim=40, cutoff=1e-10)
+
+# energy via inner product: ⟨ψ|H|ψ⟩ = ⟨ψ|Hψ⟩
+E = real(inner(ψ, Hψ)) / real(inner(ψ, ψ))
+
+# in-place version (destroys ψ, avoids copying — useful in time evolution)
+apply!(mpo, ψ; maxdim=40, cutoff=1e-10)
+```
+
+### 4. Measure observables
 
 ```julia
 using LinearAlgebra
@@ -134,7 +157,7 @@ norm2 = inner(ψ, ψ)
 println("‖ψ‖² = ", norm2)
 ```
 
-### 4. Parametric and custom operators
+### 5. Parametric and custom operators
 
 ```julia
 # Rotation gate (built-in parametric operator)
@@ -185,11 +208,12 @@ src/
 ├── StreamTensor.jl          # module entry point, all exports
 ├── index.jl                 # Index type (concrete, isbitstype)
 ├── tensor.jl                # DenseTensor, DiagTensor, MPSTensor, MPOTensor
-├── contraction.jl           # contract, _matricize
-├── decomposition.jl         # svd, qr (tensor-train conventions)
-├── abstracttensortrain.jl   # AbstractTensorTrain base, accessors
-├── mps.jl                   # MPS, random_mps, orthogonalize, inner
-├── mpo.jl                   # MPO, expect
+├── contraction.jl           # contract, _matricize, Combiner
+├── decomposition.jl         # svd, qr, factorize (tensor-train conventions)
+├── abstracttensortrain.jl   # AbstractTensorTrain base, orthogonalize!, compress!
+├── mps.jl                   # MPS, random_mps, inner
+├── mpo.jl                   # MPO, expect, inner(ψ,H,φ)
+├── apply.jl                 # apply!/apply, zip-up MPO–MPS contraction
 ├── opsum.jl                 # OpSum, OpTerm, FSM MPO builder
 ├── dmrg.jl                  # ProjMPO, dmrg_sweep!, dmrg!
 └── sitetypes/
@@ -210,6 +234,13 @@ src/
   *Strictly single-site DMRG algorithm with subspace expansion*,
   Phys. Rev. B **91**, 155115 (2015).
   [10.1103/PhysRevB.91.155115](https://link.aps.org/doi/10.1103/PhysRevB.91.155115)
+- [4] E. M. Stoudenmire and S. R. White,
+  *Minimally entangled typical thermal state algorithms*,
+  New J. Phys. **12**, 055026 (2010). *(zip-up algorithm)*
+- [5] C. Camaño, E. N. Epperly, and J. A. Tropp,
+  *Successive randomized compression: A randomized algorithm for the compressed
+  MPO–MPS product*, Quantum (2025).
+  [arXiv:2504.06475](https://arxiv.org/abs/2504.06475)
 
 ---
 
