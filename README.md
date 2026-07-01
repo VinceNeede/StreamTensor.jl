@@ -2,8 +2,8 @@
 
 A Julia library for tensor-network simulations of one-dimensional quantum systems.
 StreamTensor provides an MPS/MPO stack built from scratch, with a finite-state-machine
-`OpSum → MPO` compiler and a DMRG solver competitive with ITensor in both speed and
-memory usage.
+`OpSum → MPO` compiler and a DMRG solver benchmarked against ITensor for speed and
+memory usage (see [Performance](#performance)).
 
 > **Status:** active development. The current release covers closed-system ground-state
 > search via DMRG (single-site and two-site, including DMRG3S subspace expansion)
@@ -177,27 +177,48 @@ state(::SiteType{:MyQutrit}, ::StateName{:Zero}) = [0.0, 1.0, 0.0]
 
 ## Performance
 
-Benchmarks on the periodic TFIM ($L=20$, $J=h=1$, PBC,
-`maxdim=[2,2,2,4,8,10,20,40]`, 10 sweeps).
-`nsite=1` uses `noise=[1, 0.1, 0.01, 0.001]` (DMRG3S subspace expansion).
-Both StreamTensor variants converge to $E_0 = -10.6354441534\ldots$
+I benchmark StreamTensor against [ITensor](https://itensor.org/) (via `ITensorMPS.jl`),
+the reference tensor-network library, on physically meaningful DMRG problems rather than
+synthetic random tensors. Full code is in [`benchmark/`](./benchmark), reproducible with:
 
-| | nsite | krylovdim | maxiter | median time | min time | memory | allocations |
-|---|---|---|---|---|---|---|---|
-| StreamTensor | 2 | 6 | 5 | 220 ms | 191 ms | 279 MiB | 873 K |
-| StreamTensor | 2 | 3 | 1 | 138 ms | 112 ms | 165 MiB | 702 K |
-| StreamTensor | 1 | 6 | 5 | 147 ms | 120 ms | 137 MiB | 183 K |
-| StreamTensor | 1 | 3 | 1 | 125 ms | 111 ms | 115 MiB | 145 K |
-| ITensor      | 2 | 3 | 1 | 338 ms | 328 ms | 480 MiB | 864 K |
+```bash
+julia --project=benchmark benchmark/compare_itensor.jl
+```
 
-All benchmarks run with `BenchmarkTools.@benchmark` (20–37 samples).
-Median times are reported; GC pressure causes high variance across all runs
-(observed range: 0%–70% of wall time for both libraries).
+**Methodology:**
+- Same Hamiltonian, same physical parameters, same initial conditions on both sides
+  (see `benchmark/problems.jl` for the exact `maxdim`/`cutoff`/`noise` schedules).
+- Same Krylov solver settings passed explicitly to both libraries
+  (`krylovdim=6, maxiter=5`) — comparing default-vs-default would conflate "solver
+  tuning" with "implementation efficiency", which isn't what's being measured here.
+- `nsite=2` only (the mode directly comparable between the two libraries).
+- Single-threaded Julia. Absolute numbers depend on hardware — the point of
+  reporting the ratio is that it's what stays roughly stable across machines;
+  run `benchmark/compare_itensor.jl` yourself to reproduce on your own setup.
 
-The apples-to-apples comparison (krylovdim=3, maxiter=1) shows StreamTensor
-roughly **2.5× faster and 3× lower memory** than ITensor for `nsite=2`.
-The allocation count is comparable (~700K vs ~864K), suggesting ITensor's
-overhead comes from larger individual allocations rather than more frequent ones.
+**Results** (TFIM, $J=h=1$):
+
+| Problem | StreamTensor | ITensor | Speedup | Memory ratio |
+|---|---|---|---|---|
+| $L=20$, open      | 66.9 ms, 30.7 MiB   | 663.1 ms, 744.1 MiB  | 9.9×  | 24.2× |
+| $L=20$, periodic  | 159.1 ms, 144.1 MiB | 698.3 ms, 864.7 MiB  | 4.4×  | 6.0×  |
+| $L=50$, periodic  | 1057.2 ms, 1.61 GiB | 2369.1 ms, 2.74 GiB  | 2.2×  | 1.7×  |
+
+Energies agree between the two libraries to the precision shown, **except** for
+$L=50$ periodic:
+
+**Known caveat:** for $L=50$ periodic, the two libraries converge to different
+energies (StreamTensor: $-26.5886\ldots$, ITensor: $-26.5557\ldots$). This isn't a
+bug — it's DMRG getting stuck in a well-documented local-minimum plateau under
+periodic boundary conditions (the plateau value coincides with the open-boundary
+ground energy). With matched parameters in this configuration, StreamTensor's sweep
+schedule escapes it and ITensor's doesn't; this is a known, studied phenomenon in
+PBC-DMRG, not evidence of a general accuracy advantage. Flagged here rather than
+cherry-picked out.
+
+Internal regression tracking (StreamTensor vs itself across commits, via
+[`PkgBenchmark.jl`](https://github.com/JuliaCI/PkgBenchmark.jl)) also lives in
+[`benchmark/`](./benchmark); see `benchmark/benchmarks.jl`.
 
 ---
 
