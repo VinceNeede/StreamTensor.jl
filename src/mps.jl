@@ -239,14 +239,37 @@ end
 
 linkdim(ψ::MPS, i::Int) = ψ[i].right.dim
 
-# dag: conjugate the MPS storage
 function Base.conj(ψ::MPS{T}) where {T}
     tensors = [MPSTensor(conj(t.storage), t.left, t.site, t.right) 
                for t in ψ.tensors]
     return MPS(tensors, ψ.llim, ψ.rlim)
 end
 
-Base.adjoint(ψ::MPS) = conj(ψ) # to use ', even if no transpose is performed
+"""
+    prime(ψ::MPS) -> MPS
+Returns a view of the same storage with the primed version of the site indices
+"""
+function prime(ψ::MPS)
+    tensors = [MPSTensor(t.storage, t.left, t.site', t.right)
+               for t in ψ.tensors]
+    return MPS(tensors, ψ.llim, ψ.rlim)
+end
+
+"""
+    noprime(ψ::MPS) -> MPS
+Returns a view of the same storage with the unprimed version of the site indices
+"""
+function noprime(ψ::MPS)
+    tensors = [MPSTensor(t.storage, t.left, noprime(t.site), t.right)
+               for t in ψ.tensors]
+    return MPS(tensors, ψ.llim, ψ.rlim)
+end
+
+# dag = conj + prime
+dag(ψ::MPS) = prime(conj(ψ))
+
+# adjoint = dag
+Base.adjoint(ψ::MPS) = dag(ψ)
 
 # sim: replace link indices with fresh ones of same dimension
 function sim_linkinds(ψ::MPS{T}) where {T}
@@ -284,7 +307,7 @@ function inner(ψ::MPS{T}, φ::MPS{T}) where {T}
     end
 
     # sim the link indices of φ to avoid conflicts with ψ
-    ψ = sim_linkinds(ψ')
+    ψ = sim_linkinds(conj(ψ))
 
     # initialize scalar environment
     E = DenseTensor(
