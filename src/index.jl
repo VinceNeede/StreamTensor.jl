@@ -48,6 +48,8 @@ function Index(dim::Int, tags...; sitetype::Type{T}=Nothing) where {T<:Union{Sit
     Index(id, dim, padded_tags, ntags, false, st)
 end
 
+Index(dim::Int; tags::Symbol=:Link, sitetype=Nothing) = Index(dim, tags; sitetype)
+
 _sitetype_symbol(::Type{SiteType{S}}) where {S} = S
 
 sitetype(i::Index) = i.sitetype === Symbol() ? nothing : SiteType{i.sitetype}()
