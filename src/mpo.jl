@@ -125,7 +125,7 @@ end
 """
     apply!(H::MPO, ψ::MPS, ::Val{:zipup};
            maxdim=nothing, cutoff=nothing,
-           sweep_maxdim=nothing, sweep_cutoff=nothing) -> MPS
+           sweep_maxdim=2*maxdim, sweep_cutoff=cutoff/10) -> MPS
 
 Compute `H|ψ⟩` in-place using the zip-up algorithm, overwriting `ψ`.
 
@@ -145,8 +145,16 @@ Returns `ψ` (now representing `H|ψ⟩`) in left-canonical form
 - `maxdim`: maximum bond dimension for the right-to-left compression pass.
 - `cutoff`: singular value cutoff for the right-to-left compression pass.
 - `sweep_maxdim`: maximum bond dimension during the left-to-right pass
-  (default: no truncation, bond dimension grows to `D*χ`).
-- `sweep_cutoff`: singular value cutoff during the left-to-right pass.
+  (default: `2*maxdim`, following Paeckel et al. 2019 — a loose intermediate
+  truncation, refined by the final compression pass. `nothing` if `maxdim`
+  is `nothing` — no truncation anywhere, exact contract-then-compress).
+- `sweep_cutoff`: singular value cutoff during the left-to-right pass
+  (default: `cutoff/10`, same rationale; `nothing` if `cutoff` is `nothing`).
+
+See also: Paeckel et al., *Time-evolution methods for matrix-product states*,
+Ann. Phys. 411, 167998 (2019), [arXiv:1901.05824](https://arxiv.org/abs/1901.05824)
+— section on the zip-up algorithm, for the rationale behind the default
+`sweep_maxdim`/`sweep_cutoff` values.
 
 # Example
 ```julia
@@ -159,7 +167,8 @@ apply!(H, ψ; maxdim=16, cutoff=1e-10)
 """
 function apply!(H::MPO, ψ::MPS, ::Val{:zipup};
                 maxdim=nothing, cutoff=nothing,
-                sweep_maxdim=nothing, sweep_cutoff=nothing)
+                sweep_maxdim = isnothing(maxdim) ? nothing : 2 * maxdim,
+                sweep_cutoff = isnothing(cutoff) ? nothing : cutoff / 10)
     L = length(H)
     @assert length(ψ) == L "MPO/MPS length mismatch"
     if !isortho(H) || orthocenter(H) != 1
