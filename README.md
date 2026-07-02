@@ -220,6 +220,39 @@ Internal regression tracking (StreamTensor vs itself across commits, via
 [`PkgBenchmark.jl`](https://github.com/JuliaCI/PkgBenchmark.jl)) also lives in
 [`benchmark/`](./benchmark); see `benchmark/benchmarks.jl`.
 
+### `apply` (MPO–MPS contraction)
+
+Same methodology as above, this time on a fixed 2-qubit brickwork circuit
+(non-overlapping gates on odd bonds, then even bonds, repeated for $N$ steps —
+a standard quantum-circuit / quench setup) applied to a fully polarized initial
+state. Both libraries build the layer MPOs once (outside the timed region) and
+run `apply`/`apply` with the **same zip-up algorithm** and the same truncation
+schedule recommended by Paeckel et al. (2019): a loose intermediate truncation
+during the sweep (`sweep_maxdim = 2·maxdim`, `sweep_cutoff = cutoff/10`), then
+a tight final compression pass at the target `maxdim`/`cutoff`.
+
+**Methodology check:** before trusting the timings, the two trajectories were
+verified to produce the *same physical state* — not just similar norms —
+by materializing both to dense vectors (small $L$) and checking
+$|\langle\psi_\text{ST}|\psi_\text{IT}\rangle| \approx 1$ (numerically, to machine
+precision). See `benchmark/verify_circuit_equivalence.jl`.
+
+| $L$ | maxdim | StreamTensor | ITensor |
+|---|---|---|---|
+| 20 | 5  | 13.0 ms, 7.0 MiB  | 51.9 ms, 57.0 MiB |
+| 20 | 10 | 22.6 ms, 12.6 MiB | 58.3 ms, 62.3 MiB |
+| 20 | 20 | 54.5 ms, 27.2 MiB | 71.3 ms, 74.7 MiB |
+| 20 | 40 | 92.2 ms, 49.6 MiB | 93.0 ms, 93.4 MiB |
+| 50 | 5  | 24.1 ms, 13.2 MiB | 98.6 ms, 111.6 MiB |
+| 50 | 10 | 39.8 ms, 22.6 MiB | 106.7 ms, 118.6 MiB |
+| 50 | 20 | 79.4 ms, 42.7 MiB | 114.9 ms, 127.0 MiB |
+| 50 | 40 | 93.4 ms, 49.4 MiB | 114.9 ms, 127.6 MiB |
+
+The gap narrows as `maxdim` grows (StreamTensor and ITensor converge to
+comparable timings at `maxdim=40` for $L=20$) — the exact cause of the
+residual gap at low `maxdim` hasn't been isolated. Reproducible via
+`benchmark/compare_itensor.jl`.
+
 ---
 
 ## Project structure
