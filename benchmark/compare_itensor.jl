@@ -20,11 +20,14 @@
 # ---------------------------------------------------------------------------
 
 using BenchmarkTools
+using LinearAlgebra
 using StreamTensor
 using ITensors, ITensorMPS
 using Printf
 
 include(joinpath(@__DIR__, "problems.jl"))
+include(joinpath(@__DIR__, "circuit.jl"))
+include(joinpath(@__DIR__, "itensor_circuit.jl"))
 
 # Solo nsite=2: ITensor non supporta DMRG a singolo sito nello stesso modo
 # (vedi discussione in chat).
@@ -158,3 +161,71 @@ _write_markdown(joinpath(@__DIR__, "results", "compare_itensor.md"), rows)
 _write_csv(joinpath(@__DIR__, "results", "compare_itensor.csv"), rows)
 
 println("\nSaved: benchmark/results/compare_itensor.md, benchmark/results/compare_itensor.csv")
+
+# ---------------------------------------------------------------------------
+# Confronto zip-up vs zip-up: apply() su una traiettoria del circuito
+# brickwork. Vedi itensor_circuit.jl per _itensor_gate_layer_mpo /
+# run_itensor_circuit_trajectory (condivise con verify_circuit_equivalence.jl).
+# ---------------------------------------------------------------------------
+
+struct CircuitComparisonRow
+    name::String
+    maxdim::Int
+    st_time_ms::Float64
+    st_memory_mib::Float64
+    it_time_ms::Float64
+    it_memory_mib::Float64
+end
+
+function _compare_circuit(problem::CircuitProblem)
+    println("Benchmarking $(problem.name) ...")
+    sites, ψ0, H_odd, H_even = build_circuit_inputs(problem)
+    it_sites, it_ψ0, it_H_odd, it_H_even = build_itensor_circuit_inputs(problem)
+
+    rows = CircuitComparisonRow[]
+    for χ in problem.maxdim_values
+        st_trial = @benchmark(
+            run_circuit_trajectory($ψ0, $H_odd, $H_even, $(problem.n_steps);
+                                    maxdim=$χ, cutoff=$(problem.cutoff),
+                                    sweep_maxdim=$(2χ), sweep_cutoff=$(problem.cutoff / 10)),
+        )
+        it_trial = @benchmark(
+            run_itensor_circuit_trajectory($it_ψ0, $it_H_odd, $it_H_even, $(problem.n_steps);
+                                            maxdim=$χ, cutoff=$(problem.cutoff),
+                                            sweep_maxdim=$(2χ), sweep_cutoff=$(problem.cutoff / 10)),
+        )
+        st_m, it_m = median(st_trial), median(it_trial)
+        push!(rows, CircuitComparisonRow(
+            problem.name, χ,
+            time(st_m) / 1e6, memory(st_m) / 2^20,
+            time(it_m) / 1e6, memory(it_m) / 2^20,
+        ))
+    end
+    return rows
+end
+
+circuit_rows = reduce(vcat, (_compare_circuit(p) for p in CIRCUIT_PROBLEMS))
+
+function _print_circuit_table(rows)
+    @printf("%-16s %8s %12s %12s %12s %12s\n",
+            "problem", "maxdim", "ST time(ms)", "ST mem(MiB)", "IT time(ms)", "IT mem(MiB)")
+    for r in rows
+        @printf("%-16s %8d %12.2f %12.2f %12.2f %12.2f\n",
+                r.name, r.maxdim, r.st_time_ms, r.st_memory_mib, r.it_time_ms, r.it_memory_mib)
+    end
+end
+
+_print_circuit_table(circuit_rows)
+
+function _write_circuit_csv(path, rows)
+    open(path, "w") do io
+        println(io, "problem,maxdim,st_time_ms,st_memory_mib,it_time_ms,it_memory_mib")
+        for r in rows
+            println(io, join((r.name, r.maxdim, r.st_time_ms, r.st_memory_mib, r.it_time_ms, r.it_memory_mib), ","))
+        end
+    end
+end
+
+_write_circuit_csv(joinpath(@__DIR__, "results", "compare_itensor_apply.csv"), circuit_rows)
+
+println("\nSaved: benchmark/results/compare_itensor_apply.csv")

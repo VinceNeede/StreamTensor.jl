@@ -1,7 +1,9 @@
 using BenchmarkTools
+using LinearAlgebra
 using StreamTensor
 
 include(joinpath(@__DIR__, "problems.jl"))
+include(joinpath(@__DIR__, "circuit.jl"))
 
 # ---------------------------------------------------------------------------
 # Check di correttezza bloccante: un run NON cronometrato di ogni DMRGProblem,
@@ -33,3 +35,4 @@ end
 const SUITE = BenchmarkGroup()
 
 include(joinpath(@__DIR__, "suites", "dmrg.jl"))
+include(joinpath(@__DIR__, "suites", "apply.jl"))
